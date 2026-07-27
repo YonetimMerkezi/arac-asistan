@@ -1,0 +1,64 @@
+name: Android APK Derle
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch: {}
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Kodu al
+        uses: actions/checkout@v4
+
+      - name: Node.js kur
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Java kur (Gradle için)
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+
+      - name: Bağımlılıkları yükle
+        run: npm ci
+
+      - name: Web kaynağını paketle (esbuild)
+        run: npm run build
+
+      - name: Özel Android kaynaklarını yedekle
+        run: |
+          mkdir -p /tmp/custom-android
+          cp -r android/app/src/main/java/com/sedat/smartdriveai /tmp/custom-android/
+
+      - name: Android platformunu sıfırdan üret
+        run: |
+          rm -rf android
+          npx cap add android
+
+      - name: Özel plugin/MainActivity dosyalarını geri koy
+        run: |
+          mkdir -p android/app/src/main/java/com/sedat/smartdriveai
+          cp /tmp/custom-android/smartdriveai/*.kt android/app/src/main/java/com/sedat/smartdriveai/
+
+      - name: Bluetooth izinlerini manifest'e ekle
+        run: node scripts/patch-manifest.js
+
+      - name: Web varlıklarını Android projesine senkronize et
+        run: npx cap sync android
+
+      - name: Gradle ile APK derle (debug)
+        working-directory: android
+        run: |
+          chmod +x gradlew
+          ./gradlew assembleDebug --no-daemon
+
+      - name: APK'yı yükle (indirilebilir artifact)
+        uses: actions/upload-artifact@v4
+        with:
+          name: smart-drive-ai-debug-apk
+          path: android/app/build/outputs/apk/debug/app-debug.apk
+          retention-days: 30
