@@ -1,0 +1,163 @@
+/**
+ * base.css
+ * ---------------------------------------------------------------------------
+ * Smart Drive AI - Temel Yerleşim ve Bileşen Kalıpları
+ *
+ * theme.css'teki tokenlar üzerine kurulu, tema-bağımsız yapısal kurallar.
+ * Buradaki hiçbir kural sabit renk/boyut değeri içermez; tamamı
+ * var(--sda-*) token'larına referans verir.
+ * ---------------------------------------------------------------------------
+ */
+
+#app-root {
+  display: flex;
+  flex-direction: column;
+  height: 100dvh;
+  width: 100%;
+  overflow: hidden;
+}
+
+/* Durum çubuğu güvenli alanı (Android status bar) */
+.sda-safe-top {
+  padding-top: env(safe-area-inset-top, 0px);
+}
+
+.sda-safe-bottom {
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+}
+
+/* --- Üst bilgi çubuğu --- */
+.sda-topbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--sda-space-3) var(--sda-space-4);
+  background: var(--sda-bg-surface);
+  border-bottom: 1px solid var(--sda-hairline);
+}
+
+.sda-topbar__title {
+  font-size: var(--sda-fs-body);
+  font-weight: 600;
+  letter-spacing: var(--sda-letter-label);
+}
+
+.sda-status-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--sda-text-faint);
+  transition: background var(--sda-motion-base) var(--sda-motion-ease);
+}
+
+.sda-status-dot[data-state='connected'] {
+  background: var(--sda-success);
+  box-shadow: 0 0 0 4px color-mix(in srgb, var(--sda-success) 20%, transparent);
+}
+
+.sda-status-dot[data-state='error'] {
+  background: var(--sda-danger);
+}
+
+/* --- İçerik alanı --- */
+.sda-view {
+  flex: 1;
+  overflow-y: auto;
+  padding: var(--sda-space-4);
+  padding-bottom: calc(var(--sda-space-6) * 2);
+}
+
+.sda-view[hidden] {
+  display: none;
+}
+
+/* --- Kart bileşeni: tüm gösterge/veri kartlarının temeli --- */
+.sda-card {
+  background: var(--sda-bg-surface);
+  border: 1px solid var(--sda-hairline);
+  border-radius: var(--sda-radius-md);
+  padding: var(--sda-space-4);
+}
+
+.sda-card--elevated {
+  background: var(--sda-bg-elevated);
+  box-shadow: var(--sda-shadow-elevated);
+}
+
+.sda-card__label {
+  font-family: var(--sda-font-body);
+  font-size: var(--sda-fs-label);
+  text-transform: uppercase;
+  letter-spacing: var(--sda-letter-label);
+  color: var(--sda-text-muted);
+  margin: 0 0 var(--sda-space-2) 0;
+}
+
+.sda-card__value {
+  font-family: var(--sda-font-display);
+  font-variant-numeric: tabular-nums;
+  color: var(--sda-text-primary);
+}
+
+.sda-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: var(--sda-space-3);
+}
+
+/* --- Alt gezinme çubuğu --- */
+.sda-bottom-nav {
+  display: flex;
+  justify-content: space-around;
+  align-items: center;
+  background: var(--sda-bg-surface);
+  border-top: 1px solid var(--sda-hairline);
+  padding: var(--sda-space-2) 0;
+  position: sticky;
+  bottom: 0;
+}
+
+.sda-nav-btn {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  background: none;
+  border: none;
+  color: var(--sda-text-muted);
+  font-family: var(--sda-font-body);
+  font-size: 0.68rem;
+  letter-spacing: var(--sda-letter-label);
+  padding: var(--sda-space-2) var(--sda-space-3);
+  border-radius: var(--sda-radius-sm);
+  transition: color var(--sda-motion-fast) var(--sda-motion-ease),
+              background var(--sda-motion-fast) var(--sda-motion-ease);
+}
+
+.sda-nav-btn[aria-current='page'] {
+  color: var(--sda-accent);
+  background: var(--sda-accent-soft);
+}
+
+.sda-nav-btn:active {
+  transform: scale(0.96);
+}
+
+/* --- Boş durum (empty state) --- */
+.sda-empty-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  gap: var(--sda-space-2);
+  padding: var(--sda-space-6) var(--sda-space-4);
+  color: var(--sda-text-muted);
+}
+
+.sda-empty-state__title {
+  font-family: var(--sda-font-body);
+  font-weight: 600;
+  color: var(--sda-text-primary);
+  font-size: var(--sda-fs-body);
+}
