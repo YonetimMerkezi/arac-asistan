@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no" />
+  <title>Smart Drive AI</title>
+
+  <link rel="stylesheet" href="./src/ui/styles/theme.css" />
+  <link rel="stylesheet" href="./src/ui/styles/base.css" />
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css" />
+</head>
+<body>
+  <!--
+    Uygulama kabuğu (Faz 0).
+    Her .sda-view bir sekmeye karşılık gelir; içerikleri ilgili fazda
+    dolacak (Faz 2: dashboard, Faz 4: trip, Faz 5: navigation,
+    Faz 6: fuel, Faz 7: diagnostics, Faz 9: settings).
+    view-router.js bu yapıyı DEĞİŞTİRMEDEN yeni view'lar ekleyebilecek
+    şekilde tasarlandı.
+  -->
+  <div id="app-root">
+    <header class="sda-topbar sda-safe-top">
+      <span class="sda-topbar__title">Smart Drive AI</span>
+      <span class="sda-status-dot" data-state="disconnected" aria-label="Araç bağlantı durumu"></span>
+    </header>
+
+    <main>
+      <section class="sda-view" data-view="dashboard">
+        <!-- Kartlar dashboard-view.js tarafından JS ile inşa edilir (Faz 2). -->
+      </section>
+
+      <section class="sda-view" data-view="trip" hidden>
+        <!-- Liste/detay trip-view.js tarafından JS ile inşa edilir (Faz 4). -->
+      </section>
+
+      <section class="sda-view" data-view="navigation" hidden>
+        <!-- Harita/butonlar navigation-view.js tarafından JS ile inşa edilir (Faz 5). -->
+      </section>
+
+      <section class="sda-view" data-view="fuel" hidden>
+        <!-- Formlar/listeler fuel-view.js tarafından JS ile inşa edilir (Faz 6). -->
+      </section>
+
+      <section class="sda-view" data-view="diagnostics" hidden>
+        <!-- Kod listesi/geçmiş diagnostics-view.js tarafından JS ile inşa edilir (Faz 7). -->
+      </section>
+
+      <section class="sda-view" data-view="settings" hidden>
+        <div class="sda-empty-state">
+          <p class="sda-empty-state__title">Ayarlar</p>
+          <p>Tema, birim ve bağlantı ayarları bu bölümde olacak (Faz 9).</p>
+        </div>
+      </section>
+    </main>
+
+    <nav class="sda-bottom-nav sda-safe-bottom">
+      <button class="sda-nav-btn" type="button" data-nav-target="dashboard">Panel</button>
+      <button class="sda-nav-btn" type="button" data-nav-target="trip">Yolculuk</button>
+      <button class="sda-nav-btn" type="button" data-nav-target="navigation">Harita</button>
+      <button class="sda-nav-btn" type="button" data-nav-target="fuel">Yakıt</button>
+      <button class="sda-nav-btn" type="button" data-nav-target="diagnostics">Arıza</button>
+      <button class="sda-nav-btn" type="button" data-nav-target="settings">Ayarlar</button>
+    </nav>
+  </div>
+
+  <!-- Kaynak: src/core/app-init.js — bare npm import'ları çözmek için
+       esbuild ile paketlenir (bkz. build.js). Geliştirirken `npm run watch`. -->
+  <script type="module" src="./dist/app.bundle.js"></script>
+</body>
+</html>
