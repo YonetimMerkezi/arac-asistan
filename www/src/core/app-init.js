@@ -14,7 +14,9 @@
  * index.html bu dosyayı `type="module"` olarak yükler.
  * ---------------------------------------------------------------------------
  */
-
+import { initUnitsStore } from './units-store.js';
+import { initTts } from '../voice/tts.js';
+import { initSettingsView } from '../ui/settings-view.js';
 import { initThemeManager } from './theme-manager.js';
 import { initViewRouter } from './view-router.js';
 import { logError, logInfo, logWarn } from './logger.js';
