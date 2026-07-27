@@ -17,6 +17,22 @@
   overflow: hidden;
 }
 
+/*
+ * DÜZELTME (kayma/alt menü konumlanma hatası): <main>, #app-root'un flex
+ * çocuğu olarak varsayılan flex-grow:0 ile davranıyordu, bu yüzden içeriğine
+ * göre büzülüyor ve alt nav gerçek ekran altına yapışmak yerine ortada kalıp
+ * altında boşluk bırakıyordu. <main>'i de flex konteyner yapıp kalan tüm
+ * alanı doldurmasını sağlıyoruz - .sda-view'daki flex:1/overflow-y:auto
+ * artık gerçekten sınırlı bir yüksekliğe sahip olduğu için kayabiliyor.
+ */
+#app-root > main {
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
 /* Durum çubuğu güvenli alanı (Android status bar) */
 .sda-safe-top {
   padding-top: env(safe-area-inset-top, 0px);
