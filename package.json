@@ -1,0 +1,35 @@
+{
+  "name": "smart-drive-ai",
+  "version": "0.1.0",
+  "description": "Akıllı Araç Asistanı - Bluetooth OBD2 (ELM327) ile haberleşen, yapay zekâ destekli sesli araç asistanı",
+  "type": "module",
+  "scripts": {
+    "build": "node build.js",
+    "watch": "node build.js --watch",
+    "sync": "npm run build && npx cap sync android",
+    "open:android": "npx cap open android"
+  },
+  "dependencies": {
+    "@capacitor/core": "^6.1.2",
+    "@capacitor/android": "^6.1.2",
+    "@capacitor/app": "^6.0.1",
+    "@capacitor/preferences": "^6.0.2",
+    "@capacitor-community/text-to-speech": "^6.0.0",
+    "@capacitor-community/speech-recognition": "^6.1.0",
+    "@capacitor-community/sqlite": "^6.0.2",
+    "@capacitor/geolocation": "^6.0.1",
+    "@capacitor/filesystem": "^6.0.1",
+    "@capacitor/share": "^6.0.2",
+    "@capacitor/browser": "^6.0.3",
+    "jspdf": "^2.5.2",
+    "jspdf-autotable": "^3.8.4",
+    "xlsx": "^0.18.5",
+    "firebase": "^10.13.0",
+    "chart.js": "^4.4.4",
+    "leaflet": "^1.9.4"
+  },
+  "devDependencies": {
+    "@capacitor/cli": "^6.1.2",
+    "esbuild": "^0.23.1"
+  }
+}
