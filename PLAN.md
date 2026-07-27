@@ -11,7 +11,7 @@
 - [x] **Faz 5** — Navigasyon + hız limiti/radar uyarıları (OSM)
 - [x] **Faz 6** — Yakıt & Bakım modülleri
 - [x] **Faz 7** — Arıza Merkezi (DTC okuma/silme, Türkçe açıklama, maliyet tahmini)
-- [ ] **Faz 8** — Yapay zekâ katmanı (sürüş analizi, tahminler, haftalık rapor)
+- [x] **Faz 8** — Yapay zekâ katmanı (sürüş analizi, tahminler, haftalık rapor)
 - [ ] **Faz 9** — Firebase (Auth/Firestore/FCM), ayarlar ekranı, offline senkron, güvenlik
 
 ## Klasör Haritası
@@ -240,12 +240,43 @@ panosu/sesli asistan özellikleri bundan etkilenmez, offline çalışmaya devam 
   API'si yok - bunun yerine kullanıcıyı Google aramasına yönlendiren bir
   buton eklendi (gerçek bir API entegrasyonu uydurulmadı).
 
-## Sıradaki Adım: Faz 8 — Yapay Zekâ Katmanı
-- Sürüş stili analizi (trip verilerinden)
-- Sürüş puanı hesaplama
-- Haftalık rapor
-- Bakım/arıza tahminleri (mevcut verilerden çıkarılabilecek ölçüde,
-  uydurma olasılık yüzdeleri OLMADAN)
+## Faz 8 Kapsamı (tamamlandı)
+- `ai/driving-analysis.js` — GPS hız örneklerinden sert hızlanma/fren tespiti
+  (**dürüstlük notu:** standart OBD'de ivmeölçer yok, bu GPS tabanlı bir
+  yaklaşıklıktır, "kesin" diye sunulmaz)
+- `ai/driving-score.js` — 0-100 sürüş puanı, şeffaf/belgelenmiş bir formülle
+  (100km başına sert olay cezası) - "AI güven skoru" değil, sabit bir formül
+- `ai/maintenance-predictor.js` — bakım kalemleri için kalan km + (yeterli
+  veri varsa) tahmini gün sayısı; uydurma olasılık yüzdesi YOK, yetersiz veri
+  durumunda `null` döner
+- `ai/weekly-report.js` — son 7 günün özeti (yolculuk, mesafe, yakıt, puan,
+  arıza okuma sayısı), tamamı gerçek veriden
+- `ui/ai-view.js` — "Analiz" sekmesi, yukarıdakileri gösterir
+
+## 🔧 Telefon Testinde Bulunan ve Düzeltilen Hatalar (27 Temmuz)
+Sedat GitHub Actions'ta derlemeyi denedi, `esbuild` şu hatayla düştü:
+`Could not resolve "../ui/ai-view.js"`. İncelemede üç ayrı sorun çıktı
+(muhtemelen github.dev'de elle düzenlerken oluştu):
+1. `app-init.js` içinde `ui/ai-view.js`'den `initAiView` import ediliyordu
+   ama dosya hiç oluşturulmamıştı → **oluşturuldu**, `index.html`'e
+   `data-view="ai"` bölümü ve "Analiz" nav düğmesi eklendi.
+2. `ai/maintenance-predictor.js` ve `ai/weekly-report.js`,
+   `data/trip-repository.js`'ten var olmayan `listTripsSince()` fonksiyonunu
+   import ediyordu → **eklendi** (belirli tarihten sonraki yolculukları döndürür).
+3. `www/src/ui/styless/` (yazım hatası - "styles" olmalıydı, `index.html`
+   bozuk CSS yoluna işaret ediyordu) → **`styles/` olarak düzeltildi**.
+   Ayrıca `ai/X`, `voice/X` (boş, amaçsız dosyalar) ve `charts/trip-chart`
+   (uzantısız, `.js` ile aynı içerikte kopya dosya) temizlendi.
+
+**Ders:** Bundan sonra her teslimden önce tüm `import`'ları otomatik
+tarayıp (dosya var mı, export edilen isim gerçekten var mı) doğrulamak
+gerekiyor - bu hatalar derleme zamanına kadar fark edilmedi.
+
+## Sıradaki Adım: Faz 9 — Firebase + Ayarlar + Güvenlik
+- Firebase Auth/Firestore/Cloud Messaging entegrasyonu
+- Ayarlar ekranı (tema, birim, ses, cihaz eşleştirme arayüzü, koridor ekleme)
+- Bluetooth/veri şifreleme, Firebase güvenlik kuralları
+- Offline senkronizasyon
 
 ## Kod Standartları (uygulanıyor)
 - Dosya başına maks. 500 satır
