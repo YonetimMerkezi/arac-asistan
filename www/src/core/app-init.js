@@ -71,6 +71,8 @@ async function bootstrap() {
   try {
     await initThemeManager();
     initViewRouter('dashboard');
+    await initUnitsStore();
+    await initTts();
     await initDatabase();
     await initFavoritesStore();
     await initBluetoothManager();
@@ -83,13 +85,14 @@ async function bootstrap() {
     initFuelView();
     initDiagnosticsView();
     initAiView();
+    initSettingsView();
     initSpeedCameraService();
     initSpeedWarning();
     await initAverageSpeedCorridor();
     void checkMaintenanceDue();
 
     // Kayıtlı OBD cihazı varsa sessizce bağlanmayı dene (araç çalıştığında).
-    // Cihaz seçimi/eşleştirme arayüzü Faz 9'da (Ayarlar) eklenecek.
+    // Cihaz seçimi/eşleştirme arayüzü Ayarlar ekranında yapılabiliyor.
     void autoConnectAndInitializeObd();
 
     logInfo('app-init', 'Smart Drive AI başlatıldı');
@@ -103,7 +106,7 @@ async function bootstrap() {
  * Kayıtlı cihaza bağlanmayı dener; başarılı olursa ELM327 başlatma
  * dizisini, PID keşfini ve araç kimlik bilgilerini (VIN, yakıt tipi)
  * çalıştırır. Bağlantı yoksa sessizce çıkar - kullanıcı daha sonra
- * ayarlardan manuel bağlanabilecek (Faz 9).
+ * Ayarlar ekranından manuel bağlanabilir.
  * @returns {Promise<void>}
  */
 async function autoConnectAndInitializeObd() {
@@ -230,4 +233,4 @@ if (document.readyState === 'loading') {
   document.addEventListener('DOMContentLoaded', bootstrap);
 } else {
   bootstrap();
-} 
+}
