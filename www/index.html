@@ -14,7 +14,7 @@
     Uygulama kabuğu (Faz 0).
     Her .sda-view bir sekmeye karşılık gelir; içerikleri ilgili fazda
     dolacak (Faz 2: dashboard, Faz 4: trip, Faz 5: navigation,
-    Faz 6: fuel, Faz 7: diagnostics, Faz 9: settings).
+    Faz 6: fuel, Faz 7: diagnostics, Faz 8: ai, Faz 9: settings).
     view-router.js bu yapıyı DEĞİŞTİRMEDEN yeni view'lar ekleyebilecek
     şekilde tasarlandı.
   -->
@@ -45,6 +45,10 @@
         <!-- Kod listesi/geçmiş diagnostics-view.js tarafından JS ile inşa edilir (Faz 7). -->
       </section>
 
+      <section class="sda-view" data-view="ai" hidden>
+        <!-- İçerik ai-view.js tarafından JS ile inşa edilir (Faz 8). -->
+      </section>
+
       <section class="sda-view" data-view="settings" hidden>
         <div class="sda-empty-state">
           <p class="sda-empty-state__title">Ayarlar</p>
@@ -59,6 +63,7 @@
       <button class="sda-nav-btn" type="button" data-nav-target="navigation">Harita</button>
       <button class="sda-nav-btn" type="button" data-nav-target="fuel">Yakıt</button>
       <button class="sda-nav-btn" type="button" data-nav-target="diagnostics">Arıza</button>
+      <button class="sda-nav-btn" type="button" data-nav-target="ai">Analiz</button>
       <button class="sda-nav-btn" type="button" data-nav-target="settings">Ayarlar</button>
     </nav>
   </div>
