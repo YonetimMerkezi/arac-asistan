@@ -10,10 +10,14 @@
  */
 
 import { TextToSpeech } from '@capacitor-community/text-to-speech';
+import { Preferences } from '@capacitor/preferences';
 import { logError, logInfo } from '../core/logger.js';
 
 /** @type {string} Uygulama genelinde kullanılan dil. */
 const LANGUAGE = 'tr-TR';
+
+/** @type {string} Ses tercihi Preferences anahtarı. */
+const MUTED_STORAGE_KEY = 'sda_tts_muted';
 
 /** @typedef {{text: string, resolve: () => void}} SpeechTask */
 
@@ -23,8 +27,23 @@ const queue = [];
 /** @type {boolean} */
 let speaking = false;
 
-/** @type {boolean} Kullanıcı ayarlardan sesi kapattıysa (Faz 9) true olur. */
+/** @type {boolean} Kullanıcı Ayarlar ekranından sesi kapattıysa true olur. */
 let muted = false;
+
+/**
+ * Kayıtlı ses tercihini yükler. Uygulama açılışında bir kez çağrılmalıdır.
+ * @returns {Promise<void>}
+ */
+export async function initTts() {
+  try {
+    const { value } = await Preferences.get({ key: MUTED_STORAGE_KEY });
+    muted = value === 'true';
+    logInfo('tts', `Ses tercihi yüklendi: ${muted ? 'kapalı' : 'açık'}`);
+  } catch (error) {
+    logError('tts', 'Ses tercihi okunamadı, varsayılan (açık) kullanılıyor', error);
+    muted = false;
+  }
+}
 
 /**
  * Bir metni sesli okuma kuyruğuna ekler. Önceki cümle bitmeden başlamaz.
@@ -52,12 +71,25 @@ export function clearSpeechQueue() {
 }
 
 /**
- * Sesi geçici olarak kapatır/açar (Faz 9 ayarlar ekranı bu API'yi kullanacak).
+ * Sesi geçici olarak kapatır/açar ve tercihi kalıcı olarak saklar.
  * @param {boolean} value
+ * @returns {Promise<void>}
  */
-export function setMuted(value) {
+export async function setMuted(value) {
   muted = value;
   if (value) clearSpeechQueue();
+  try {
+    await Preferences.set({ key: MUTED_STORAGE_KEY, value: String(value) });
+  } catch (error) {
+    logError('tts', 'Ses tercihi kaydedilemedi', error);
+  }
+}
+
+/**
+ * @returns {boolean} Sesin şu an kapalı olup olmadığı.
+ */
+export function isMuted() {
+  return muted;
 }
 
 /**
