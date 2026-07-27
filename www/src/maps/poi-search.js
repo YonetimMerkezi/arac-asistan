@@ -1,0 +1,70 @@
+/**
+ * poi-search.js
+ * ---------------------------------------------------------------------------
+ * Yakındaki otopark, akaryakıt istasyonu, servis ve hastane aramaları.
+ *
+ * overpass-client.js'in paylaşılan sorgu altyapısını kullanır; her POI
+ * kategorisi yalnızca kendi OSM etiket eşleşmesini tanımlar (Open/Closed
+ * prensibi - yeni bir kategori eklemek CATEGORY_TAGS'e bir satır eklemektir).
+ * ---------------------------------------------------------------------------
+ */
+
+import { runOverpassQuery, buildRadiusNodeQuery } from './overpass-client.js';
+import { haversineDistanceKm } from '../trip/geo-utils.js';
+
+/** @typedef {'parking'|'fuel'|'service'|'hospital'} PoiCategory */
+
+/** @type {Record<PoiCategory, string>} Kategori -> Overpass etiket filtresi. */
+const CATEGORY_TAGS = {
+  parking: '"amenity"="parking"',
+  fuel: '"amenity"="fuel"',
+  service: '"shop"="car_repair"',
+  hospital: '"amenity"="hospital"',
+};
+
+/**
+ * @typedef {Object} PoiResult
+ * @property {string} name
+ * @property {number} lat
+ * @property {number} lon
+ * @property {number} distanceKm
+ */
+
+/**
+ * Verilen kategoride, konuma en yakın POI'leri döndürür (yakınlığa göre sıralı).
+ * @param {PoiCategory} category
+ * @param {number} lat
+ * @param {number} lon
+ * @param {number} [radiusMeters=5000]
+ * @returns {Promise<PoiResult[]>}
+ */
+export async function findNearbyPoi(category, lat, lon, radiusMeters = 5000) {
+  const tagFilter = CATEGORY_TAGS[category];
+  if (!tagFilter) return [];
+
+  const elements = await runOverpassQuery(buildRadiusNodeQuery(lat, lon, radiusMeters, tagFilter));
+
+  return elements
+    .filter((el) => typeof el.lat === 'number' && typeof el.lon === 'number')
+    .map((el) => ({
+      name: el.tags?.name ?? defaultNameFor(category),
+      lat: el.lat,
+      lon: el.lon,
+      distanceKm: haversineDistanceKm(lat, lon, el.lat, el.lon),
+    }))
+    .sort((a, b) => a.distanceKm - b.distanceKm);
+}
+
+/**
+ * @param {PoiCategory} category
+ * @returns {string}
+ */
+function defaultNameFor(category) {
+  const names = {
+    parking: 'Otopark',
+    fuel: 'Akaryakıt İstasyonu',
+    service: 'Oto Servis',
+    hospital: 'Hastane',
+  };
+  return names[category] ?? 'Bilinmeyen Konum';
+}
