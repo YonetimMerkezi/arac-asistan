@@ -1,3 +1,19 @@
+# build-android.yml
+# -----------------------------------------------------------------------------
+# Smart Drive AI - Bulutta Android APK Derleme
+#
+# Amaç: Sedat'ın bilgisayara ihtiyaç duymadan, yalnızca telefondan yaptığı
+# değişiklikleri GitHub'a göndererek (push/upload) çalışan bir APK elde
+# edebilmesi. Android platformu repoda TUTULMAZ - her çalışmada
+# `npx cap add android` ile sıfırdan üretilir, ardından özel yazılmış
+# BluetoothClassicPlugin.kt/MainActivity.kt geri kopyalanır, Kotlin desteği
+# etkinleştirilir (bkz. scripts/patch-gradle-kotlin.js) ve gerekli izinler
+# AndroidManifest.xml'e eklenir (bkz. scripts/patch-manifest.js).
+#
+# Sonuç: Her çalıştırmanın sonunda "Actions" sekmesinde indirilebilir bir
+# app-debug.apk artifact'i oluşur - telefonun tarayıcısından indirilip
+# doğrudan kurulabilir (bilinmeyen kaynaklara izin vermek gerekir).
+# -----------------------------------------------------------------------------
 name: Android APK Derle
 
 on:
@@ -24,7 +40,7 @@ jobs:
           java-version: '17'
 
       - name: Bağımlılıkları yükle
-        run: npm install
+        run: npm ci
 
       - name: Web kaynağını paketle (esbuild)
         run: npm run build
@@ -43,6 +59,9 @@ jobs:
         run: |
           mkdir -p android/app/src/main/java/com/sedat/smartdriveai
           cp /tmp/custom-android/smartdriveai/*.kt android/app/src/main/java/com/sedat/smartdriveai/
+
+      - name: Kotlin desteğini etkinleştir
+        run: node scripts/patch-gradle-kotlin.js
 
       - name: Bluetooth izinlerini manifest'e ekle
         run: node scripts/patch-manifest.js
