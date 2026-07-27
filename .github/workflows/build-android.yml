@@ -40,7 +40,7 @@ jobs:
           java-version: '17'
 
       - name: Bağımlılıkları yükle
-        run: npm ci
+        run: npm install
 
       - name: Web kaynağını paketle (esbuild)
         run: npm run build
