@@ -20,6 +20,8 @@ import { queryPid } from '../obd/elm327.js';
 import { getState as getBluetoothState, onStateChange } from '../bluetooth/bluetooth-manager.js';
 import { getVehicleInfo, onVehicleInfoChange } from '../core/vehicle-info-store.js';
 import { setLivePidValue } from '../core/vehicle-live-data-store.js';
+import { getUnits, onUnitsChange } from '../core/units-store.js';
+import { formatDistanceOrSpeed, formatTemperature } from '../core/unit-conversion.js';
 import { logWarn } from '../core/logger.js';
 
 /** @type {number} PID döngüsü tamamlandıktan sonraki bekleme (ms). Çok sık sorgu ELM327'yi tıkar. */
@@ -34,19 +36,20 @@ const POLL_INTERVAL_MS = 300;
  * @property {number} max
  * @property {'lg'|'sm'} size
  * @property {number} [dangerAbove]
+ * @property {'speed'|'temp'} [unitKind] - Ayarlar ekranındaki birim tercihine göre dönüştürülecekse.
  */
 
 /** @type {DashboardCardConfig[]} Ana ekranda gösterilecek kartlar, öncelik sırasına göre. */
 const DASHBOARD_CARDS = [
-  { pid: '0D', label: 'Hız', unit: 'km/h', min: 0, max: 240, size: 'lg' },
+  { pid: '0D', label: 'Hız', unit: 'km/h', min: 0, max: 240, size: 'lg', unitKind: 'speed' },
   { pid: '0C', label: 'Motor Devri', unit: 'RPM', min: 0, max: 8000, size: 'sm', dangerAbove: 6500 },
-  { pid: '05', label: 'Hararet', unit: '°C', min: 0, max: 130, size: 'sm', dangerAbove: 105 },
+  { pid: '05', label: 'Hararet', unit: '°C', min: 0, max: 130, size: 'sm', dangerAbove: 105, unitKind: 'temp' },
   { pid: '42', label: 'Akü Voltajı', unit: 'V', min: 8, max: 16, size: 'sm', dangerAbove: 15 },
   { pid: '2F', label: 'Yakıt Seviyesi', unit: '%', min: 0, max: 100, size: 'sm' },
   { pid: '04', label: 'Motor Yükü', unit: '%', min: 0, max: 100, size: 'sm' },
   { pid: '11', label: 'Gaz Kelebeği', unit: '%', min: 0, max: 100, size: 'sm' },
-  { pid: '0F', label: 'Emme Havası', unit: '°C', min: -20, max: 80, size: 'sm' },
-  { pid: '46', label: 'Dış Sıcaklık', unit: '°C', min: -30, max: 55, size: 'sm' },
+  { pid: '0F', label: 'Emme Havası', unit: '°C', min: -20, max: 80, size: 'sm', unitKind: 'temp' },
+  { pid: '46', label: 'Dış Sıcaklık', unit: '°C', min: -30, max: 55, size: 'sm', unitKind: 'temp' },
 ];
 
 /** @type {boolean} Poll döngüsünün aktif olup olmadığı (bağlantı koptuğunda durdurulur). */
@@ -74,6 +77,11 @@ export function initDashboardView() {
 
   unsubscribeVehicleInfo = onVehicleInfoChange((info) => {
     applySupportedPidVisibility(container, info.supportedPids);
+  });
+
+  onUnitsChange(() => {
+    buildCards(container);
+    applySupportedPidVisibility(container, getVehicleInfo().supportedPids);
   });
 
   unsubscribeBtState = onStateChange((btState) => {
@@ -120,14 +128,16 @@ function buildCards(container) {
     }
 
     const gauge = document.createElement('sda-gauge');
+    const minDisplay = convertForDisplay(config, config.min);
+    const maxDisplay = convertForDisplay(config, config.max);
     gauge.setAttribute('label', config.label);
-    gauge.setAttribute('unit', config.unit);
-    gauge.setAttribute('min', String(config.min));
-    gauge.setAttribute('max', String(config.max));
+    gauge.setAttribute('unit', minDisplay.unit);
+    gauge.setAttribute('min', String(minDisplay.value));
+    gauge.setAttribute('max', String(maxDisplay.value));
     gauge.setAttribute('size', config.size);
-    gauge.setAttribute('value', String(config.min));
+    gauge.setAttribute('value', String(minDisplay.value));
     if (config.dangerAbove !== undefined) {
-      gauge.setAttribute('danger-above', String(config.dangerAbove));
+      gauge.setAttribute('danger-above', String(convertForDisplay(config, config.dangerAbove).value));
     }
 
     card.appendChild(gauge);
@@ -171,7 +181,8 @@ async function startPolling(container) {
         if (result) {
           setLivePidValue(config.pid, result.value, result.unit);
           const gauge = container.querySelector(`[data-pid-card="${config.pid}"] sda-gauge`);
-          gauge?.setAttribute('value', String(result.value));
+          const display = convertForDisplay(config, result.value);
+          gauge?.setAttribute('value', String(display.value));
         }
       } catch (error) {
         // Tek bir PID zaman aşımına uğrarsa döngünün tamamı durmamalı.
@@ -180,6 +191,27 @@ async function startPolling(container) {
     }
     await sleep(POLL_INTERVAL_MS);
   }
+}
+
+/**
+ * Ham metrik bir değeri (km/h veya °C tabanlı), kullanıcının Ayarlar
+ * ekranından seçtiği birim tercihine göre görüntülenecek değere çevirir.
+ * `unitKind` tanımlı değilse (RPM, %, V gibi zaten birimsiz/evrensel
+ * alanlar) değeri olduğu gibi döndürür.
+ * @param {DashboardCardConfig} config
+ * @param {number} rawValue
+ * @returns {{value: number, unit: string}}
+ */
+function convertForDisplay(config, rawValue) {
+  const units = getUnits();
+
+  if (config.unitKind === 'speed') {
+    return formatDistanceOrSpeed(rawValue, units.distance, config.unit);
+  }
+  if (config.unitKind === 'temp') {
+    return formatTemperature(rawValue, units.temperature);
+  }
+  return { value: rawValue, unit: config.unit };
 }
 
 /**

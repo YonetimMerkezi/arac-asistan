@@ -15,6 +15,8 @@ import { generateTripPdfReport } from '../trip/trip-report-pdf.js';
 import { generateTripExcelReport } from '../trip/trip-report-excel.js';
 import { saveAndShareReport } from '../trip/file-export.js';
 import { onStateChange as onBluetoothStateChange } from '../bluetooth/bluetooth-manager.js';
+import { getUnits } from '../core/units-store.js';
+import { formatDistanceOrSpeed } from '../core/unit-conversion.js';
 import { logWarn } from '../core/logger.js';
 
 /** @type {HTMLElement|null} */
@@ -65,7 +67,7 @@ async function renderList() {
     item.style.cssText = 'display:block; width:100%; text-align:left; margin-bottom: var(--sda-space-3); border:none; cursor:pointer;';
     item.innerHTML = `
       <p class="sda-card__label">${new Date(trip.start_time).toLocaleDateString('tr-TR')}</p>
-      <p class="sda-card__value" style="font-size:1.1rem;">${trip.distance_km.toFixed(1)} km · ${trip.avg_speed_kmh.toFixed(0)} km/h ort.</p>
+      <p class="sda-card__value" style="font-size:1.1rem;">${formatTripDistance(trip.distance_km)} · ${formatTripSpeed(trip.avg_speed_kmh)} ort.</p>
     `;
     item.addEventListener('click', () => renderDetail(trip.id));
     listEl.appendChild(item);
@@ -84,9 +86,9 @@ async function renderDetail(tripId) {
   container.innerHTML = `
     <button type="button" data-back style="background:none;border:none;color:var(--sda-accent);margin-bottom:var(--sda-space-3);">← Geri</button>
     <div class="sda-grid" style="margin-bottom:var(--sda-space-4);">
-      <div class="sda-card"><p class="sda-card__label">Mesafe</p><p class="sda-card__value">${trip.distance_km.toFixed(1)} km</p></div>
+      <div class="sda-card"><p class="sda-card__label">Mesafe</p><p class="sda-card__value">${formatTripDistance(trip.distance_km)}</p></div>
       <div class="sda-card"><p class="sda-card__label">Süre</p><p class="sda-card__value">${formatDuration(trip.duration_s)}</p></div>
-      <div class="sda-card"><p class="sda-card__label">Ort. Hız</p><p class="sda-card__value">${trip.avg_speed_kmh.toFixed(0)} km/h</p></div>
+      <div class="sda-card"><p class="sda-card__label">Ort. Hız</p><p class="sda-card__value">${formatTripSpeed(trip.avg_speed_kmh)}</p></div>
       <div class="sda-card"><p class="sda-card__label">Yakıt</p><p class="sda-card__value">${trip.fuel_used_l.toFixed(2)} L</p></div>
     </div>
     <canvas data-trip-chart height="180"></canvas>
@@ -123,4 +125,23 @@ function formatDuration(totalSeconds) {
   const hours = Math.floor(totalSeconds / 3600);
   const minutes = Math.floor((totalSeconds % 3600) / 60);
   return `${hours} sa ${minutes} dk`;
+}
+
+/**
+ * Mesafeyi kullanıcının Ayarlar'dan seçtiği birime (km/mil) çevirip biçimlendirir.
+ * @param {number} km
+ * @returns {string}
+ */
+function formatTripDistance(km) {
+  const { value, unit } = formatDistanceOrSpeed(km, getUnits().distance, 'km');
+  return `${value.toFixed(1)} ${unit}`;
+}
+
+/**
+ * @param {number} kmh
+ * @returns {string}
+ */
+function formatTripSpeed(kmh) {
+  const { value, unit } = formatDistanceOrSpeed(kmh, getUnits().distance, 'km/h');
+  return `${value.toFixed(0)} ${unit}`;
 }
