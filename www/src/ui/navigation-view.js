@@ -10,7 +10,7 @@
  */
 
 import L from 'leaflet';
-import { onPosition, getLastPosition } from '../core/gps-tracker.js';
+import { onPosition, getLastPosition, ensureGpsTracking } from '../core/gps-tracker.js';
 import { getDrivingRoute } from '../maps/route-service.js';
 import { findNearbyPoi } from '../maps/poi-search.js';
 import { getFavoriteLocation, setFavoriteLocation } from '../maps/favorites-store.js';
@@ -66,6 +66,9 @@ export function initNavigationView() {
   onPosition(updateVehicleMarker);
   const last = getLastPosition();
   if (last) updateVehicleMarker(last);
+
+  // Harita ekranı araca bağlı olunmasa bile konum kullanır - izni burada iste.
+  void ensureGpsTracking();
 
   bindQuickNavButtons(container);
   bindPoiButtons(container);
