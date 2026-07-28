@@ -71,18 +71,12 @@ export function initGpsTracker() {
  * @returns {Promise<boolean>} İzin verilip verilmediği / izleme başlayıp başlamadığı.
  */
 export async function ensureGpsTracking() {
-  // GEÇİCİ TEŞHİS: fonksiyon gerçekten çağrılıyor mu, en baştan görelim.
-  window.alert('[Teşhis] ensureGpsTracking() çağrıldı');
-
-  if (watchId !== null) {
-    window.alert('[Teşhis] Zaten izleniyor (watchId dolu), çıkılıyor');
-    return true; // zaten izleniyor
-  }
+  if (watchId !== null) return true; // zaten izleniyor
 
   try {
     const permission = await Geolocation.requestPermissions();
     // GEÇİCİ TEŞHİS: masaüstü konsolu olmadığı için izin sonucunu doğrudan
-    // ekranda gösteriyoruz. Sorun çözülünce bu alert() satırları kaldırılmalı.
+    // ekranda gösteriyoruz. Sorun çözülünce bu alert() satırı kaldırılmalı.
     window.alert(`[Teşhis] Geolocation.requestPermissions() sonucu: ${JSON.stringify(permission)}`);
 
     const granted = permission.location === 'granted' || permission.coarseLocation === 'granted';
