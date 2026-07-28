@@ -72,6 +72,12 @@ jobs:
             find android/app/src/main/res -type f \
               ! -name "*.xml" ! -name "*.png" ! -name "*.jpg" ! -name "*.jpeg" ! -name "*.webp" \
               -print -delete
+            # "splash" kaynak adıyla çakışabilecek herhangi bir splash.xml
+            # varsa (Capacitor'ün varsayılanı veya yanlışlıkla yüklenmiş)
+            # temizle - tek otorite bizim splash.png'imiz olsun.
+            find android/app/src/main/res -type f -iname "splash.xml" -print -delete
+            echo "--- res/drawable* içeriği (teşhis) ---"
+            find android/app/src/main/res -iname "splash*" -exec ls -la {} \;
             echo "Özel ikon/açılış ekranı kaynakları kopyalandı."
           else
             echo "assets/android-res bulunamadı, Capacitor'ün varsayılan ikonu kullanılacak."
