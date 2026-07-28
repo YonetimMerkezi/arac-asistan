@@ -41,6 +41,8 @@ const REQUEST_TIMEOUT_MS = 8000;
  *   kullanıcıya "tekrar dene" önerebilir).
  */
 export async function runOverpassQuery(query) {
+  const attempts = [];
+
   for (const endpoint of OVERPASS_ENDPOINTS) {
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
@@ -54,15 +56,18 @@ export async function runOverpassQuery(query) {
       });
 
       if (!response.ok) {
+        attempts.push(`${endpoint}: HTTP ${response.status}`);
         logWarn('overpass-client', `${endpoint} başarısız: HTTP ${response.status}, sıradaki ayna deneniyor`);
         continue;
       }
 
       const data = await response.json();
+      const count = data.elements?.length ?? 0;
+      // GEÇİCİ TEŞHİS: cihazda gerçekte ne olduğunu doğrudan göster.
+      window.alert(`[Teşhis] Overpass başarılı: ${endpoint}\nSonuç sayısı: ${count}`);
       return data.elements ?? [];
     } catch (error) {
-      // Ağ yokken (offline) bu beklenen bir durumdur - OBD özellikleri
-      // etkilenmeden çalışmaya devam etmeli, bu yüzden warn seviyesinde kalır.
+      attempts.push(`${endpoint}: ${error?.name ?? 'Hata'} - ${error?.message ?? error}`);
       logWarn('overpass-client', `${endpoint} sorgusu başarısız, sıradaki ayna deneniyor`, error);
     } finally {
       clearTimeout(timeout);
@@ -70,6 +75,8 @@ export async function runOverpassQuery(query) {
   }
 
   logWarn('overpass-client', 'Tüm Overpass aynaları başarısız oldu');
+  // GEÇİCİ TEŞHİS: tüm denemelerin gerçek hata mesajlarını doğrudan göster.
+  window.alert(`[Teşhis] Tüm Overpass aynaları başarısız:\n${attempts.join('\n')}`);
   return [];
 }
 
