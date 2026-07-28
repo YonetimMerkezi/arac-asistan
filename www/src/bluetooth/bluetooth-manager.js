@@ -137,9 +137,6 @@ export async function connectToDevice(address, name) {
     return true;
   } catch (error) {
     logError('bluetooth-manager', `Bağlantı başarısız: ${address}`, error);
-    // GEÇİCİ TEŞHİS: native taraftan gelen gerçek hata mesajını doğrudan
-    // göster - sorun çözülünce bu satır kaldırılacak.
-    window.alert(`[Teşhis] Native bağlantı hatası: ${error?.message ?? JSON.stringify(error)}`);
     setState({ status: 'disconnected', quality: 'none' });
     return false;
   }
