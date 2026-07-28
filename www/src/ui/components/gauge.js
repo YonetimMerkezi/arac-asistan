@@ -59,10 +59,13 @@ function buildArcPath(cx, cy, radius, fraction) {
  *   unit   - birim metni (ör. "km/h")
  *   size   - "lg" (ana gösterge) veya "sm" (kart içi), varsayılan "sm"
  *   danger-above - bu değerin üzerinde yay tehlike rengine döner (opsiyonel)
+ *   color-hue - 0-360, bu widget'a özel vurgu rengi (opsiyonel; verilmezse
+ *     temanın genel --sda-accent'i kullanılır - "her widget'ın rengi ayrı
+ *     ayrı özelleştirilebilmeli" gereksinimi için)
  */
 export class SdaGauge extends HTMLElement {
   static get observedAttributes() {
-    return ['value', 'min', 'max', 'label', 'unit', 'size', 'danger-above'];
+    return ['value', 'min', 'max', 'label', 'unit', 'size', 'danger-above', 'color-hue'];
   }
 
   constructor() {
@@ -93,10 +96,16 @@ export class SdaGauge extends HTMLElement {
     const unit = this.getAttribute('unit') ?? '';
     const size = this.getAttribute('size') ?? 'sm';
     const dangerAbove = this.getAttribute('danger-above');
+    const colorHue = this.getAttribute('color-hue');
 
     const clamped = Math.max(min, Math.min(max, value));
     const fraction = max > min ? (clamped - min) / (max - min) : 0;
     const isDanger = dangerAbove !== null && value > Number(dangerAbove);
+    // Widget'a özel renk verildiyse temanın genel --sda-accent yerine bu
+    // ton kullanılır (temayla aynı doygunluk/parlaklık formülüyle).
+    const accentColor = colorHue !== null
+      ? `hsl(${Number(colorHue)} 90% 60%)`
+      : 'var(--sda-accent, #FF8A3D)';
 
     const viewBoxSize = 120;
     const cx = viewBoxSize / 2;
@@ -117,7 +126,7 @@ export class SdaGauge extends HTMLElement {
         .wrap { position: relative; }
         svg { display: block; }
         .track { fill: none; stroke: var(--sda-arc-track, #333); stroke-width: 8; stroke-linecap: round; }
-        .value { fill: none; stroke: var(--sda-accent, #FF8A3D); stroke-width: 8; stroke-linecap: round;
+        .value { fill: none; stroke: ${accentColor}; stroke-width: 8; stroke-linecap: round;
                  transition: d 160ms linear; }
         .value.danger { stroke: var(--sda-danger, #FF5A5F); }
         .readout {
