@@ -75,6 +75,30 @@ function patchAppGradle() {
   console.log('[patch-gradle-kotlin] Modül (app) build.gradle yamalandı (kotlin-android + kotlin-stdlib eklendi).');
 }
 
+/**
+ * Kotlin derleyicisinin hedef JVM sürümünü Java derleyicisiyle (17) eşitler.
+ * Aksi halde "Inconsistent JVM-target compatibility" hatası oluşur - Kotlin
+ * derleyicisi varsayılan olarak kurulu JDK'nın (21) sürümünü hedeflerken,
+ * Capacitor'ün sabit sourceCompatibility/targetCompatibility'si 17'de kalır.
+ */
+function patchKotlinJvmTarget() {
+  let content = readFileSync(APP_GRADLE, 'utf8');
+  if (content.includes('kotlinOptions')) {
+    console.log('[patch-gradle-kotlin] Kotlin JVM hedefi zaten ayarlı.');
+    return;
+  }
+
+  const block = `
+tasks.withType(org.jetbrains.kotlin.gradle.tasks.KotlinCompile).configureEach {
+    kotlinOptions {
+        jvmTarget = "17"
+    }
+}
+`;
+  writeFileSync(APP_GRADLE, content + block, 'utf8');
+  console.log('[patch-gradle-kotlin] Kotlin JVM hedefi 17 olarak ayarlandı (Java ile eşleşsin diye).');
+}
+
 function removeDuplicateJavaMainActivity() {
   if (existsSync(JAVA_MAIN_ACTIVITY)) {
     unlinkSync(JAVA_MAIN_ACTIVITY);
@@ -86,5 +110,6 @@ function removeDuplicateJavaMainActivity() {
 
 patchProjectGradle();
 patchAppGradle();
+patchKotlinJvmTarget();
 removeDuplicateJavaMainActivity();
 console.log('[patch-gradle-kotlin] Kotlin desteği başarıyla eklendi.');
