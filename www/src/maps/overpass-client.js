@@ -15,44 +15,62 @@
 
 import { logWarn } from '../core/logger.js';
 
-/** @type {string} Overpass genel sunucu uç noktası. */
-const OVERPASS_ENDPOINT = 'https://overpass-api.de/api/interpreter';
+/**
+ * @type {string[]} Overpass halka açık ayna sunucuları, sırayla denenir.
+ * TEK NEDENİ: overpass-api.de (birincil, resmi) yoğun saatlerde zaman
+ * aşımına uğrayabiliyor/504 dönebiliyor - bu durumda sessizce "sonuç yok"
+ * gibi görünüyordu, halbuki asıl sorun sunucuya ulaşılamamasıydı. Birden
+ * fazla ayna denemek bu tek-sunucu kesintisini büyük ölçüde tolere eder.
+ */
+const OVERPASS_ENDPOINTS = [
+  'https://overpass-api.de/api/interpreter',
+  'https://overpass.kumi.systems/api/interpreter',
+  'https://overpass.openstreetmap.ru/api/interpreter',
+];
 
-/** @type {number} İstek zaman aşımı (ms). */
+/** @type {number} İstek zaman aşımı (ms), her ayna için ayrı ayrı uygulanır. */
 const REQUEST_TIMEOUT_MS = 8000;
 
 /**
- * Verilen Overpass QL sorgusunu çalıştırır.
+ * Verilen Overpass QL sorgusunu çalıştırır - birincil sunucu başarısız
+ * olursa (zaman aşımı, 5xx, ağ hatası) sırayla yedek aynaları dener.
  * @param {string} query - Overpass QL gövdesi (örn. "[out:json];node(...);out;").
- * @returns {Promise<Array<Object>>} `elements` dizisi, hata durumunda boş dizi.
+ * @returns {Promise<Array<Object>>} `elements` dizisi; TÜM aynalar
+ *   başarısız olursa boş dizi (bu durumda gerçekten "sonuç yok" ile
+ *   "sunucuya ulaşılamadı" ayrımı yapılamaz - çağıran taraf isterse
+ *   kullanıcıya "tekrar dene" önerebilir).
  */
 export async function runOverpassQuery(query) {
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+  for (const endpoint of OVERPASS_ENDPOINTS) {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
 
-  try {
-    const response = await fetch(OVERPASS_ENDPOINT, {
-      method: 'POST',
-      body: `data=${encodeURIComponent(query)}`,
-      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-      signal: controller.signal,
-    });
+    try {
+      const response = await fetch(endpoint, {
+        method: 'POST',
+        body: `data=${encodeURIComponent(query)}`,
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        signal: controller.signal,
+      });
 
-    if (!response.ok) {
-      logWarn('overpass-client', `Overpass yanıtı başarısız: HTTP ${response.status}`);
-      return [];
+      if (!response.ok) {
+        logWarn('overpass-client', `${endpoint} başarısız: HTTP ${response.status}, sıradaki ayna deneniyor`);
+        continue;
+      }
+
+      const data = await response.json();
+      return data.elements ?? [];
+    } catch (error) {
+      // Ağ yokken (offline) bu beklenen bir durumdur - OBD özellikleri
+      // etkilenmeden çalışmaya devam etmeli, bu yüzden warn seviyesinde kalır.
+      logWarn('overpass-client', `${endpoint} sorgusu başarısız, sıradaki ayna deneniyor`, error);
+    } finally {
+      clearTimeout(timeout);
     }
-
-    const data = await response.json();
-    return data.elements ?? [];
-  } catch (error) {
-    // Ağ yokken (offline) bu beklenen bir durumdur - OBD özellikleri
-    // etkilenmeden çalışmaya devam etmeli, bu yüzden warn seviyesinde kalır.
-    logWarn('overpass-client', 'Overpass sorgusu başarısız (muhtemelen internet yok)', error);
-    return [];
-  } finally {
-    clearTimeout(timeout);
   }
+
+  logWarn('overpass-client', 'Tüm Overpass aynaları başarısız oldu');
+  return [];
 }
 
 /**
