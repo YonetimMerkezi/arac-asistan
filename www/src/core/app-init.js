@@ -42,6 +42,7 @@ import { checkMaintenanceDue } from '../maintenance/maintenance-reminder.js';
 import { initDiagnosticsView } from '../ui/diagnostics-view.js';
 import { initAiView } from '../ui/ai-view.js';
 import { initSettingsView } from '../ui/settings-view.js';
+import { initFavoriteBrandsStore } from './favorite-brands-store.js';
 import { initBackgroundService } from './background-service.js';
 
 /** @type {string} Karşılama cümlesinde kullanılan sahip adı. */
@@ -81,11 +82,13 @@ async function bootstrap() {
     await initUnitsStore();
     await initTts();
     await initDashboardConfigStore();
+    await initFavoriteBrandsStore();
     await initDatabase();
     await initFavoritesStore();
     await initBluetoothManager();
     initGpsTracker();
     bindConnectionStatusDot();
+    bindConnectionStatusToast();
     initDashboardView();
     initTripRecorder();
     initTripView();
@@ -180,6 +183,41 @@ function bindConnectionStatusDot() {
       ? (state.quality === 'weak' ? 'error' : 'connected')
       : 'disconnected';
     dot.setAttribute('data-state', domState);
+  });
+}
+
+/**
+ * Araç bağlantı durumunu (bağlanıyor/bağlandı/koptu), kullanıcı hangi
+ * ekranda olursa olsun görünür kılan küçük bir şerit gösterir - Ayarlar
+ * ekranına gitmeden de "bağlandı mı, denemeye mi devam ediyor" bilgisini
+ * verir. "Bağlandı" bildirimi birkaç saniye sonra kendiliğinden kaybolur.
+ */
+function bindConnectionStatusToast() {
+  onBluetoothStateChange((state) => {
+    const existing = document.querySelector('[data-connection-toast]');
+    if (existing) existing.remove();
+
+    if (state.status === 'disconnected') return; // sessiz - "koptu" her an olabilir, rahatsız etmesin.
+
+    const toast = document.createElement('div');
+    toast.setAttribute('data-connection-toast', '');
+    toast.setAttribute('role', 'status');
+    const isConnected = state.status === 'connected';
+    toast.style.cssText = 'position:fixed; top:0; left:0; right:0; z-index:9998; '
+      + `background:${isConnected ? 'var(--sda-success, #34D399)' : 'var(--sda-accent, #FF8A3D)'}; `
+      + 'color:#14171C; padding:8px 12px; font-size:0.8rem; text-align:center; font-weight:600;';
+
+    toast.textContent = isConnected
+      ? `Bağlandı: ${state.deviceName ?? state.deviceAddress}`
+      : state.status === 'reconnecting'
+        ? 'Araç bağlantısı yeniden kuruluyor...'
+        : `${state.deviceName ?? state.deviceAddress ?? 'Araç'} cihazına bağlanılıyor...`;
+
+    document.body.appendChild(toast);
+
+    if (isConnected) {
+      setTimeout(() => toast.remove(), 4000);
+    }
   });
 }
 
