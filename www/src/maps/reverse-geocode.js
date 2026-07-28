@@ -3,20 +3,23 @@
  * ---------------------------------------------------------------------------
  * Bir GPS koordinatını (enlem/boylam) Türkiye il/ilçe adına çevirir.
  *
- * OpenStreetMap Nominatim'in halka açık, ücretsiz servisini kullanır - bu,
- * projedeki diğer harita servisleriyle (Overpass POI arama, OSRM rota) aynı
- * ücretsiz/anahtar gerektirmeyen OSM ekosistemi yaklaşımını sürdürür.
+ * ÖNCE Sedat'ın Cloudflare Worker'ını dener (aynı worker Overpass POI
+ * aramasını da yapıyor) - telefon ağından Nominatim'e DOĞRUDAN erişimin
+ * bazı ağlarda başarısız olduğu gözlemlendi (Overpass'ta yaşanan sorunun
+ * aynısı). Worker başarısız olursa doğrudan Nominatim'e düşer.
  *
- * ÖNEMLİ (Nominatim kullanım politikası): saniyede en fazla 1 istek, geçerli
- * bir User-Agent/Referer gerektirir (tarayıcıdan otomatik gider). Bu yüzden
- * sonuç KONUM ÖNEMLİ ÖLÇÜDE DEĞİŞMEDİKÇE önbellekte tutulur - her GPS
- * güncellemesinde tekrar sorgulanmaz.
+ * ÖNEMLİ (Nominatim kullanım politikası): saniyede en fazla 1 istek. Bu
+ * yüzden sonuç KONUM ÖNEMLİ ÖLÇÜDE DEĞİŞMEDİKÇE önbellekte tutulur - her
+ * GPS güncellemesinde tekrar sorgulanmaz.
  * ---------------------------------------------------------------------------
  */
 
 import { logWarn } from '../core/logger.js';
 
-/** @type {string} Nominatim halka açık sunucu adresi. */
+/** @type {string} Sedat'ın POI/coğrafi kodlama proxy worker adresi. */
+const POI_WORKER_ENDPOINT = 'https://istasyon.sedonet23.workers.dev/';
+
+/** @type {string} Nominatim halka açık sunucu adresi (yedek yol). */
 const NOMINATIM_ENDPOINT = 'https://nominatim.openstreetmap.org/reverse';
 
 /** @type {number} Önbelleği geçersiz kılmak için gereken asgari konum değişimi (km). */
@@ -44,6 +47,48 @@ export async function reverseGeocodeIlIlce(lat, lon) {
     return cache.result;
   }
 
+  const viaWorker = await tryWorkerReverseGeocode(lat, lon);
+  if (viaWorker) {
+    cache = { lat, lon, result: viaWorker };
+    return viaWorker;
+  }
+
+  const viaDirect = await tryDirectNominatim(lat, lon);
+  if (viaDirect) {
+    cache = { lat, lon, result: viaDirect };
+    return viaDirect;
+  }
+
+  return null;
+}
+
+/**
+ * @param {number} lat
+ * @param {number} lon
+ * @returns {Promise<IlIlce|null>}
+ */
+async function tryWorkerReverseGeocode(lat, lon) {
+  try {
+    const url = `${POI_WORKER_ENDPOINT}?reverse=1&lat=${lat}&lon=${lon}`;
+    const response = await fetch(url);
+    if (!response.ok) return null;
+
+    const data = await response.json();
+    if (!data.success || !data.il || !data.ilce) return null;
+
+    return { il: data.il, ilce: data.ilce };
+  } catch (error) {
+    logWarn('reverse-geocode', 'Worker üzerinden coğrafi kodlama başarısız, doğrudan Nominatim deneniyor', error);
+    return null;
+  }
+}
+
+/**
+ * @param {number} lat
+ * @param {number} lon
+ * @returns {Promise<IlIlce|null>}
+ */
+async function tryDirectNominatim(lat, lon) {
   try {
     const url = `${NOMINATIM_ENDPOINT}?format=jsonv2&lat=${lat}&lon=${lon}&zoom=10&addressdetails=1&accept-language=tr`;
     const controller = new AbortController();
@@ -69,11 +114,9 @@ export async function reverseGeocodeIlIlce(lat, lon) {
       return null;
     }
 
-    const result = { il, ilce };
-    cache = { lat, lon, result };
-    return result;
+    return { il, ilce };
   } catch (error) {
-    logWarn('reverse-geocode', 'Ters coğrafi kodlama başarısız', error);
+    logWarn('reverse-geocode', 'Doğrudan Nominatim coğrafi kodlaması başarısız', error);
     return null;
   }
 }
