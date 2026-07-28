@@ -116,6 +116,13 @@ class BluetoothClassicPlugin : Plugin() {
      * Verilen MAC adresine SPP uzerinden baglanir. Baglanti kurulduktan
      * sonra bir okuma dongusu baslatir ve gelen veriyi "read" event'i
      * olarak JS tarafina iletir (notifyListeners).
+     *
+     * UCUZ ELM327 KLONLARI NOTU: Standart UUID tabanli SPP soketi
+     * (createRfcommSocketToServiceRecord) bircok ucuz klonda SDP kaydi
+     * duzgun yayinlanmadigi icin basarisiz olur. Bu durumda, cok bilinen
+     * bir yedek yontem olan "kanal 1" soketine (yansima/reflection ile)
+     * dusuluyor - bircok Android OBD uygulamasinin (ör. Torque) kullandigi
+     * ayni yaklasim.
      */
     @PluginMethod
     fun connect(call: PluginCall) {
@@ -130,13 +137,21 @@ class BluetoothClassicPlugin : Plugin() {
                 val adapter = BluetoothAdapter.getDefaultAdapter()
                 val device = adapter.getRemoteDevice(address)
 
-                // Kesif (discovery) acikken baglanti yavaslar/basarisiz olur - once durduruyoruz.
-                if (adapter.isDiscovering) {
-                    adapter.cancelDiscovery()
+                // Kesif (discovery) acikken baglanti yavaslar/basarisiz olur - once
+                // durdurmayi DENERIZ. NOT: adapter.isDiscovering OKUMAK BILE Android
+                // 12+'ta BLUETOOTH_SCAN izni gerektirir - bu izin JS tarafinda hic
+                // istenmiyordu ve SecurityException firlatip TUM baglantiyi
+                // engelliyordu. Bu kontrol yalnizca performans icin (zorunlu
+                // degil), bu yuzden izin yoksa sessizce atlanir.
+                try {
+                    if (adapter.isDiscovering) {
+                        adapter.cancelDiscovery()
+                    }
+                } catch (permissionError: SecurityException) {
+                    Log.w(TAG, "BLUETOOTH_SCAN izni yok, kesif kontrolu atlaniyor", permissionError)
                 }
 
-                val newSocket = device.createRfcommSocketToServiceRecord(SPP_UUID)
-                newSocket.connect()
+                val newSocket = openSocketWithFallback(device)
                 socket = newSocket
                 inputStream = newSocket.inputStream
                 outputStream = newSocket.outputStream
@@ -148,15 +163,60 @@ class BluetoothClassicPlugin : Plugin() {
                 result.put("address", address)
                 call.resolve(result)
 
-                notifyListeners("connectionChange", connectionState(true, address))
+                notifyConnectionChangeOnMainThread(true, address)
             } catch (e: Exception) {
                 // IOException ve SecurityException'i tek noktada yakala.
                 Log.e(TAG, "Baglanti hatasi: $address", e)
                 closeQuietly()
                 call.reject("Baglanti kurulamadi: ${e.message}", e)
-                notifyListeners("connectionChange", connectionState(false, address))
+                notifyConnectionChangeOnMainThread(false, address)
             }
         }
+    }
+
+    /**
+     * Once standart UUID tabanli SPP soketini dener; basarisiz olursa
+     * (IOException) yansima ile "kanal 1" soketine duser. Her ikisi de
+     * basarisiz olursa son hatayi firlatir.
+     * @param device Baglanilacak cihaz.
+     * @returns Baglanmis (connect() cagrilmis) BluetoothSocket.
+     */
+    private fun openSocketWithFallback(device: BluetoothDevice): BluetoothSocket {
+        try {
+            val uuidSocket = device.createRfcommSocketToServiceRecord(SPP_UUID)
+            uuidSocket.connect()
+            return uuidSocket
+        } catch (uuidError: IOException) {
+            Log.w(TAG, "Standart SPP soketi basarisiz, kanal 1 yedegi deneniyor", uuidError)
+            try {
+                val fallbackSocket = device.javaClass
+                    .getMethod("createRfcommSocket", Int::class.javaPrimitiveType)
+                    .invoke(device, 1) as BluetoothSocket
+                fallbackSocket.connect()
+                return fallbackSocket
+            } catch (fallbackError: Exception) {
+                Log.e(TAG, "Kanal 1 yedegi de basarisiz oldu", fallbackError)
+                throw uuidError
+            }
+        }
+    }
+
+    /**
+     * notifyListeners() Capacitor kopruesu icin ana (UI) thread'inde
+     * cagrilmalidir - arka plan (executor) thread'inden dogrudan cagirmak
+     * bazi Android surumlerinde/cihazlarda YAKALANAMAYAN bir istisna ile
+     * TUM UYGULAMANIN COKMESINE sebep olabilir. Bu yuzden her zaman ana
+     * thread'e postalanir.
+     */
+    private fun notifyConnectionChangeOnMainThread(connected: Boolean, address: String?) {
+        val payload = connectionState(connected, address)
+        activity?.runOnUiThread {
+            try {
+                notifyListeners("connectionChange", payload)
+            } catch (e: Exception) {
+                Log.e(TAG, "connectionChange bildirimi gonderilemedi", e)
+            }
+        } ?: notifyListeners("connectionChange", payload)
     }
 
     /**
@@ -199,7 +259,7 @@ class BluetoothClassicPlugin : Plugin() {
         readLoopActive = false
         closeQuietly()
         call.resolve()
-        notifyListeners("connectionChange", connectionState(false, null))
+        notifyConnectionChangeOnMainThread(false, null)
     }
 
     /**
@@ -222,7 +282,13 @@ class BluetoothClassicPlugin : Plugin() {
                     val chunk = String(buffer, 0, bytesRead)
                     val payload = JSObject()
                     payload.put("data", chunk)
-                    notifyListeners("read", payload)
+                    activity?.runOnUiThread {
+                        try {
+                            notifyListeners("read", payload)
+                        } catch (e: Exception) {
+                            Log.e(TAG, "read bildirimi gonderilemedi", e)
+                        }
+                    } ?: notifyListeners("read", payload)
                 } catch (e: IOException) {
                     if (readLoopActive) {
                         Log.w(TAG, "Okuma donguesunde baglanti koptu", e)
@@ -242,7 +308,7 @@ class BluetoothClassicPlugin : Plugin() {
     private fun handleUnexpectedDisconnect() {
         readLoopActive = false
         closeQuietly()
-        notifyListeners("connectionChange", connectionState(false, null))
+        notifyConnectionChangeOnMainThread(false, null)
     }
 
     private fun connectionState(connected: Boolean, address: String?): JSObject {
