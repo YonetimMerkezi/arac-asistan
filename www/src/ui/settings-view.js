@@ -259,8 +259,30 @@ function renderDeviceSection(container) {
     return;
   }
 
+  // ÖNEMLİ: "connecting"/"reconnecting" durumunda listeyi YENİDEN ÇEKMİYORUZ.
+  // Önceki sürümde her durum değişikliği (connecting dahil) tüm bölümü
+  // "Cihazlar taranıyor..." ile değiştirip listPairedDevices()'i yeniden
+  // çağırıyordu - bu, kullanıcının az önce tıkladığı "bağlanılıyor..." /
+  // "bağlantı kurulamadı" mesajını göstermeden SİLİYORDU (ekranda görülen
+  // "titreme" buydu). Artık bağlanma sürecinde sabit, tek bir durum kartı
+  // gösteriliyor.
+  if (state.status === 'connecting' || state.status === 'reconnecting') {
+    section.innerHTML = `
+      <div class="sda-card">
+        <p class="sda-card__label">${state.status === 'connecting' ? 'Bağlanıyor' : 'Yeniden bağlanıyor'}</p>
+        <p class="sda-card__value" style="font-size:1rem;">${state.deviceName ?? state.deviceAddress ?? '...'}</p>
+      </div>
+    `;
+    return;
+  }
+
   section.innerHTML = '<p class="sda-card__label">Cihazlar taranıyor...</p>';
   void listPairedDevices().then((devices) => {
+    // Bu asenkron sonuç döndüğünde bağlantı durumu artık "disconnected"
+    // değilse (ör. kullanıcı hızlıca bağlandıysa) eski listeyi ÇİZME -
+    // aksi halde "connected" kartının üzerine yazabilir.
+    if (getBluetoothState().status !== 'disconnected') return;
+
     if (devices.length === 0) {
       section.innerHTML = '<p class="sda-card__label">Eşleştirilmiş cihaz yok. Önce Android Bluetooth ayarlarından ELM327 adaptörünü eşleştirin.</p>';
       return;
@@ -280,19 +302,20 @@ function renderDeviceSection(container) {
         const address = button.getAttribute('data-connect');
         const name = button.getAttribute('data-name');
 
-        if (statusEl) statusEl.textContent = `${name || address} cihazına bağlanılıyor...`;
+        // NOT: connectToDevice() çağrısı hemen "connecting" durumuna geçer,
+        // bu da yukarıdaki durum dinleyicisini tetikleyip bu bölümü
+        // "Bağlanıyor" kartına çevirir - bu yüzden burada statusEl/button'a
+        // yazdığımız değerler çoğu zaman hiç görünmeden değişir; asıl kalıcı
+        // geri bildirim yukarıdaki "connecting" ve aşağıdaki hata bloğu.
         button.disabled = true;
-
         const ok = await connectToDevice(address, name);
 
-        if (!ok) {
+        if (!ok && getBluetoothState().status === 'disconnected') {
           button.disabled = false;
           if (statusEl) {
             statusEl.textContent = 'Bağlantı kurulamadı. Cihazın açık ve menzilde olduğundan emin olun, tekrar deneyin.';
           }
         }
-        // Başarılıysa bluetooth-manager'ın "connected" durumu zaten bu
-        // bölümü otomatik yeniden çizecek (onBluetoothStateChange aboneliği).
       });
     });
   });
