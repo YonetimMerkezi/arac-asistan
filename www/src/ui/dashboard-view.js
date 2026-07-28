@@ -1,192 +1,335 @@
 /**
  * dashboard-view.js
  * ---------------------------------------------------------------------------
- * Ana ekran (dashboard) görünümü.
+ * Ana ekran (Panel) görünümü - TAMAMEN KULLANICI ÖZELLEŞTİRİLEBİLİR.
  *
  * Sorumlulukları:
- *  - `[data-view="dashboard"]` içine gösterge kartlarını (sda-gauge) inşa etmek
- *  - Bluetooth bağlıyken PID'leri sırayla (ELM327 yarı çift yönlü olduğu için
- *    paralel değil, ardışık) sorgulayıp kartları güncellemek
- *  - Aracın desteklemediği PID'lere ait kartları otomatik gizlemek
- *    (Faz 1'de keşfedilen supportedPids listesine göre)
+ *  - Kullanıcının seçtiği widget'ları (dashboard-config-store.js), seçtiği
+ *    sırada ve renkte çizmek
+ *  - "Düzenle" modunda: widget-registry.js'teki TÜM olası veri kaynaklarını
+ *    listeleyip ekle/çıkar/sırala/renklendir arayüzü sunmak
+ *  - Bluetooth bağlıyken görünür widget'ların PID'lerini sırayla (ELM327
+ *    yarı çift yönlü olduğu için paralel değil, ardışık) sorgulayıp
+ *    güncellemek
+ *  - Aracın desteklemediği PID'lerin widget'larını otomatik gizlemek
  *
- * '../ui/components/gauge.js' import edilerek <sda-gauge> custom element'i
- * kaydedilir; bu dosya yalnızca dashboard'a ÖZGÜ yerleşim/veri mantığını içerir.
+ * Veri kaynağı KATALOĞU: obd/widget-registry.js (neler mevcut).
+ * Kullanıcı SEÇİMİ: core/dashboard-config-store.js (kullanıcı ne seçti).
+ * Bu dosya yalnızca ikisini birleştirip ÇİZER - Single Responsibility.
  * ---------------------------------------------------------------------------
  */
 
 import '../ui/components/gauge.js';
+import { iconMarkup } from './icons.js';
 import { queryPid } from '../obd/elm327.js';
+import { WIDGET_REGISTRY, getWidgetDefinition } from '../obd/widget-registry.js';
 import { getState as getBluetoothState, onStateChange } from '../bluetooth/bluetooth-manager.js';
 import { getVehicleInfo, onVehicleInfoChange } from '../core/vehicle-info-store.js';
 import { setLivePidValue } from '../core/vehicle-live-data-store.js';
 import { getUnits, onUnitsChange } from '../core/units-store.js';
 import { formatDistanceOrSpeed, formatTemperature } from '../core/unit-conversion.js';
+import {
+  getDashboardConfig,
+  setDashboardWidgets,
+  setWidgetColor,
+  onDashboardConfigChange,
+} from '../core/dashboard-config-store.js';
 import { logWarn } from '../core/logger.js';
 
 /** @type {number} PID döngüsü tamamlandıktan sonraki bekleme (ms). Çok sık sorgu ELM327'yi tıkar. */
 const POLL_INTERVAL_MS = 300;
 
-/**
- * @typedef {Object} DashboardCardConfig
- * @property {string} pid - Hex PID kodu.
- * @property {string} label
- * @property {string} unit
- * @property {number} min
- * @property {number} max
- * @property {'lg'|'sm'} size
- * @property {number} [dangerAbove]
- * @property {'speed'|'temp'} [unitKind] - Ayarlar ekranındaki birim tercihine göre dönüştürülecekse.
- */
-
-/** @type {DashboardCardConfig[]} Ana ekranda gösterilecek kartlar, öncelik sırasına göre. */
-const DASHBOARD_CARDS = [
-  { pid: '0D', label: 'Hız', unit: 'km/h', min: 0, max: 240, size: 'lg', unitKind: 'speed' },
-  { pid: '0C', label: 'Motor Devri', unit: 'RPM', min: 0, max: 8000, size: 'sm', dangerAbove: 6500 },
-  { pid: '05', label: 'Hararet', unit: '°C', min: 0, max: 130, size: 'sm', dangerAbove: 105, unitKind: 'temp' },
-  { pid: '42', label: 'Akü Voltajı', unit: 'V', min: 8, max: 16, size: 'sm', dangerAbove: 15 },
-  { pid: '2F', label: 'Yakıt Seviyesi', unit: '%', min: 0, max: 100, size: 'sm' },
-  { pid: '04', label: 'Motor Yükü', unit: '%', min: 0, max: 100, size: 'sm' },
-  { pid: '11', label: 'Gaz Kelebeği', unit: '%', min: 0, max: 100, size: 'sm' },
-  { pid: '0F', label: 'Emme Havası', unit: '°C', min: -20, max: 80, size: 'sm', unitKind: 'temp' },
-  { pid: '46', label: 'Dış Sıcaklık', unit: '°C', min: -30, max: 55, size: 'sm', unitKind: 'temp' },
-];
+/** @type {number[]} Renk seçici için sunulan ön ayar tonlar (0-360). */
+const COLOR_PRESETS = [28, 4, 48, 142, 199, 291, 335, 0];
 
 /** @type {boolean} Poll döngüsünün aktif olup olmadığı (bağlantı koptuğunda durdurulur). */
 let pollingActive = false;
 
-/** @type {() => void | null} */
-let unsubscribeBtState = null;
+/** @type {boolean} Şu an "Düzenle" modunda mıyız. */
+let editMode = false;
 
-/** @type {() => void | null} */
-let unsubscribeVehicleInfo = null;
+/** @type {HTMLElement|null} */
+let viewContainer = null;
+
+/** @type {string[]} En son bilinen desteklenen PID listesi (görünürlük hesabı için). */
+let lastSupportedPids = [];
 
 /**
- * Dashboard görünümünü başlatır: kartları oluşturur ve bağlantı durumuna
- * göre veri döngüsünü açıp kapatır. app-init.js tarafından bir kez çağrılır.
+ * Panel görünümünü başlatır. app-init.js tarafından bir kez çağrılır.
  */
 export function initDashboardView() {
-  const container = document.querySelector('[data-view="dashboard"]');
-  if (!container) {
+  viewContainer = document.querySelector('[data-view="dashboard"]');
+  if (!viewContainer) {
     logWarn('dashboard-view', 'Dashboard konteyneri bulunamadı');
     return;
   }
 
-  buildCards(container);
-  applySupportedPidVisibility(container, getVehicleInfo().supportedPids);
+  render();
 
-  unsubscribeVehicleInfo = onVehicleInfoChange((info) => {
-    applySupportedPidVisibility(container, info.supportedPids);
+  onVehicleInfoChange((info) => {
+    lastSupportedPids = info.supportedPids;
+    if (!editMode) applySupportedPidVisibility();
   });
 
-  onUnitsChange(() => {
-    buildCards(container);
-    applySupportedPidVisibility(container, getVehicleInfo().supportedPids);
-  });
+  onUnitsChange(() => { if (!editMode) render(); });
+  onDashboardConfigChange(() => { if (!editMode) render(); });
 
-  unsubscribeBtState = onStateChange((btState) => {
+  onStateChange((btState) => {
     if (btState.status === 'connected' && !pollingActive) {
-      startPolling(container);
+      startPolling();
     } else if (btState.status !== 'connected') {
       pollingActive = false;
     }
   });
 
-  // Açılışta zaten bağlıysa (Faz 1'in sessiz otomatik bağlanması) hemen başlat.
   if (getBluetoothState().status === 'connected') {
-    startPolling(container);
+    startPolling();
   }
 }
 
 /**
- * Kaynakları serbest bırakır (bellek sızıntısı önleme).
+ * Görünüm modunu (normal <-> düzenle) günceller ve yeniden çizer.
  */
-export function disposeDashboardView() {
-  pollingActive = false;
-  unsubscribeBtState?.();
-  unsubscribeVehicleInfo?.();
+function render() {
+  if (!viewContainer) return;
+  viewContainer.innerHTML = `
+    <div style="display:flex; justify-content:flex-end; margin-bottom:8px;">
+      <button type="button" data-toggle-edit class="sda-btn sda-btn--ghost">
+        ${editMode ? iconMarkup('done', { size: 18 }) + '<span>Bitti</span>' : iconMarkup('edit', { size: 18 }) + '<span>Düzenle</span>'}
+      </button>
+    </div>
+    <div data-content></div>
+  `;
+
+  viewContainer.querySelector('[data-toggle-edit]')?.addEventListener('click', () => {
+    editMode = !editMode;
+    render();
+  });
+
+  const content = viewContainer.querySelector('[data-content]');
+  if (editMode) {
+    renderEditMode(content);
+  } else {
+    renderNormalMode(content);
+    applySupportedPidVisibility();
+  }
 }
 
 /**
- * Boş durum metnini kaldırıp her PID için bir <sda-gauge> kartı inşa eder.
- * @param {HTMLElement} container
+ * Normal modu çizer: kullanıcının seçtiği widget'ları sırayla, kendi
+ * renkleriyle gösterir.
+ * @param {HTMLElement} content
  */
-function buildCards(container) {
-  container.innerHTML = '';
+function renderNormalMode(content) {
+  const config = getDashboardConfig();
+
+  if (config.widgets.length === 0) {
+    content.innerHTML = `
+      <div class="sda-empty-state">
+        <p class="sda-empty-state__title">Panel boş</p>
+        <p>Sağ üstteki "Düzenle" ile göstermek istediğin verileri seç.</p>
+      </div>
+    `;
+    return;
+  }
 
   const grid = document.createElement('div');
   grid.className = 'sda-grid';
-  grid.setAttribute('data-dashboard-grid', '');
 
-  for (const config of DASHBOARD_CARDS) {
+  config.widgets.forEach((instance, index) => {
+    const def = getWidgetDefinition(instance.pid);
+    if (!def) return; // Kayıt dışı kalmış bir PID varsa sessizce atla.
+
     const card = document.createElement('div');
     card.className = 'sda-card sda-card--elevated';
-    card.setAttribute('data-pid-card', config.pid);
-    // Ana hız göstergesi tam genişlik kaplasın diye grid'in dışında, üstte gösterilir.
-    if (config.size === 'lg') {
-      card.style.gridColumn = '1 / -1';
-    }
+    card.setAttribute('data-pid-card', def.pid);
+    const isPrimary = index === 0;
+    if (isPrimary) card.style.gridColumn = '1 / -1';
 
     const gauge = document.createElement('sda-gauge');
-    const minDisplay = convertForDisplay(config, config.min);
-    const maxDisplay = convertForDisplay(config, config.max);
-    gauge.setAttribute('label', config.label);
+    const minDisplay = convertForDisplay(def, def.min);
+    const maxDisplay = convertForDisplay(def, def.max);
+    gauge.setAttribute('label', def.label);
     gauge.setAttribute('unit', minDisplay.unit);
     gauge.setAttribute('min', String(minDisplay.value));
     gauge.setAttribute('max', String(maxDisplay.value));
-    gauge.setAttribute('size', config.size);
+    gauge.setAttribute('size', isPrimary ? 'lg' : 'sm');
     gauge.setAttribute('value', String(minDisplay.value));
-    if (config.dangerAbove !== undefined) {
-      gauge.setAttribute('danger-above', String(convertForDisplay(config, config.dangerAbove).value));
+    if (def.dangerAbove !== undefined) {
+      gauge.setAttribute('danger-above', String(convertForDisplay(def, def.dangerAbove).value));
+    }
+    if (instance.colorHue !== null && instance.colorHue !== undefined) {
+      gauge.setAttribute('color-hue', String(instance.colorHue));
     }
 
     card.appendChild(gauge);
     grid.appendChild(card);
-  }
+  });
 
-  container.appendChild(grid);
+  content.innerHTML = '';
+  content.appendChild(grid);
+}
+
+/**
+ * Düzenle modunu çizer: kayıttaki TÜM widget'lar, ekle/çıkar + sıra + renk
+ * kontrolleriyle.
+ * @param {HTMLElement} content
+ */
+function renderEditMode(content) {
+  const config = getDashboardConfig();
+  const selectedPids = config.widgets.map((w) => w.pid);
+
+  content.innerHTML = `
+    <p class="sda-card__label" style="margin-bottom:12px;">
+      Göstermek istediğin verileri seç, sırala, renklendir.
+    </p>
+    <div data-widget-list></div>
+  `;
+
+  const list = content.querySelector('[data-widget-list]');
+
+  // Önce seçili olanlar (sırayla), sonra seçili olmayanlar.
+  const ordered = [
+    ...config.widgets.map((w) => WIDGET_REGISTRY.find((r) => r.pid === w.pid)).filter(Boolean),
+    ...WIDGET_REGISTRY.filter((r) => !selectedPids.includes(r.pid)),
+  ];
+
+  list.innerHTML = ordered.map((def, i) => {
+    const instance = config.widgets.find((w) => w.pid === def.pid);
+    const isSelected = Boolean(instance);
+    const colorHue = instance?.colorHue ?? def.defaultColorHue;
+    const selectedIndex = config.widgets.findIndex((w) => w.pid === def.pid);
+
+    return `
+      <div class="sda-card sda-widget-card" style="margin-bottom:8px;">
+        <div style="display:flex; align-items:center; justify-content:space-between;">
+          <label style="display:flex; align-items:center; gap:8px;">
+            <input type="checkbox" data-widget-toggle="${def.pid}" ${isSelected ? 'checked' : ''}>
+            <span>${def.label}</span>
+          </label>
+          ${isSelected ? `
+            <div style="display:flex; gap:4px;">
+              <button type="button" data-move-up="${def.pid}" ${selectedIndex === 0 ? 'disabled' : ''}>${iconMarkup('arrow-up', { size: 16 })}</button>
+              <button type="button" data-move-down="${def.pid}" ${selectedIndex === config.widgets.length - 1 ? 'disabled' : ''}>${iconMarkup('arrow-down', { size: 16 })}</button>
+            </div>
+          ` : ''}
+        </div>
+        ${isSelected ? `
+          <div class="sda-widget-card__controls">
+            ${COLOR_PRESETS.map((hue) => `
+              <button type="button" data-set-color="${def.pid}" data-hue="${hue}" aria-label="Renk">
+                <span class="sda-color-swatch" style="background:hsl(${hue} 90% 60%);" aria-current="${hue === colorHue}"></span>
+              </button>
+            `).join('')}
+          </div>
+        ` : ''}
+      </div>
+    `;
+  }).join('');
+
+  bindEditModeEvents(list);
+}
+
+/**
+ * @param {HTMLElement} list
+ */
+function bindEditModeEvents(list) {
+  list.querySelectorAll('[data-widget-toggle]').forEach((checkbox) => {
+    checkbox.addEventListener('change', async () => {
+      const pid = checkbox.getAttribute('data-widget-toggle');
+      const config = getDashboardConfig();
+
+      const nextWidgets = checkbox.checked
+        ? [...config.widgets, { pid, colorHue: null }]
+        : config.widgets.filter((w) => w.pid !== pid);
+
+      await setDashboardWidgets(nextWidgets);
+      renderEditMode(list.parentElement);
+    });
+  });
+
+  list.querySelectorAll('[data-move-up]').forEach((button) => {
+    button.addEventListener('click', async () => {
+      await moveWidget(button.getAttribute('data-move-up'), -1);
+      renderEditMode(list.parentElement);
+    });
+  });
+
+  list.querySelectorAll('[data-move-down]').forEach((button) => {
+    button.addEventListener('click', async () => {
+      await moveWidget(button.getAttribute('data-move-down'), 1);
+      renderEditMode(list.parentElement);
+    });
+  });
+
+  list.querySelectorAll('[data-set-color]').forEach((button) => {
+    button.addEventListener('click', async () => {
+      const pid = button.getAttribute('data-set-color');
+      const hue = Number(button.getAttribute('data-hue'));
+      await setWidgetColor(pid, hue);
+      renderEditMode(list.parentElement);
+    });
+  });
+}
+
+/**
+ * Bir widget'ı seçili listede bir konum yukarı/aşağı taşır.
+ * @param {string} pid
+ * @param {1|-1} direction
+ * @returns {Promise<void>}
+ */
+async function moveWidget(pid, direction) {
+  const config = getDashboardConfig();
+  const index = config.widgets.findIndex((w) => w.pid === pid);
+  const targetIndex = index + direction;
+  if (index === -1 || targetIndex < 0 || targetIndex >= config.widgets.length) return;
+
+  const widgets = [...config.widgets];
+  [widgets[index], widgets[targetIndex]] = [widgets[targetIndex], widgets[index]];
+  await setDashboardWidgets(widgets);
 }
 
 /**
  * Aracın desteklemediği PID'lere ait kartları gizler. Boş liste (henüz
- * keşif yapılmadıysa) durumunda hiçbir kart gizlenmez - kullanıcı bağlantı
- * kurulana kadar tüm kartları (sıfır değerle) görür.
- * @param {HTMLElement} container
- * @param {string[]} supportedPids
+ * keşif yapılmadıysa) durumunda hiçbir kart gizlenmez.
  */
-function applySupportedPidVisibility(container, supportedPids) {
-  if (supportedPids.length === 0) return;
+function applySupportedPidVisibility() {
+  if (!viewContainer || lastSupportedPids.length === 0) return;
 
-  const cards = container.querySelectorAll('[data-pid-card]');
-  cards.forEach((card) => {
+  viewContainer.querySelectorAll('[data-pid-card]').forEach((card) => {
     const pid = card.getAttribute('data-pid-card');
-    card.hidden = pid !== '0D' && !supportedPids.includes(pid); // Hız her zaman gösterilir.
+    card.hidden = !lastSupportedPids.includes(pid);
   });
 }
 
 /**
  * Sürekli poll döngüsünü başlatır. ELM327 yarı çift yönlü olduğundan
- * PID'ler PARALEL değil, ardışık (sıralı await) sorgulanır.
- * @param {HTMLElement} container
+ * PID'ler PARALEL değil, ardışık (sıralı await) sorgulanır. Her turda
+ * güncel widget listesi tekrar okunur - kullanıcı düzenleme yaparken
+ * döngü otomatik uyum sağlar.
  */
-async function startPolling(container) {
+async function startPolling() {
   pollingActive = true;
 
   while (pollingActive) {
-    for (const config of DASHBOARD_CARDS) {
-      if (!pollingActive) break;
+    const config = getDashboardConfig();
+
+    for (const instance of config.widgets) {
+      if (!pollingActive || editMode) break;
+      const def = getWidgetDefinition(instance.pid);
+      if (!def) continue;
 
       try {
-        const result = await queryPid(config.pid);
+        const result = await queryPid(def.pid);
         if (result) {
-          setLivePidValue(config.pid, result.value, result.unit);
-          const gauge = container.querySelector(`[data-pid-card="${config.pid}"] sda-gauge`);
-          const display = convertForDisplay(config, result.value);
+          setLivePidValue(def.pid, result.value, result.unit);
+          const gauge = viewContainer?.querySelector(`[data-pid-card="${def.pid}"] sda-gauge`);
+          const display = convertForDisplay(def, result.value);
           gauge?.setAttribute('value', String(display.value));
         }
       } catch (error) {
         // Tek bir PID zaman aşımına uğrarsa döngünün tamamı durmamalı.
-        logWarn('dashboard-view', `PID okunamadı: ${config.pid}`, error);
+        logWarn('dashboard-view', `PID okunamadı: ${def.pid}`, error);
       }
     }
     await sleep(POLL_INTERVAL_MS);
@@ -194,24 +337,17 @@ async function startPolling(container) {
 }
 
 /**
- * Ham metrik bir değeri (km/h veya °C tabanlı), kullanıcının Ayarlar
- * ekranından seçtiği birim tercihine göre görüntülenecek değere çevirir.
- * `unitKind` tanımlı değilse (RPM, %, V gibi zaten birimsiz/evrensel
- * alanlar) değeri olduğu gibi döndürür.
- * @param {DashboardCardConfig} config
+ * Ham metrik bir değeri kullanıcının Ayarlar ekranından seçtiği birim
+ * tercihine göre görüntülenecek değere çevirir.
+ * @param {import('../obd/widget-registry.js').WidgetDefinition} def
  * @param {number} rawValue
  * @returns {{value: number, unit: string}}
  */
-function convertForDisplay(config, rawValue) {
+function convertForDisplay(def, rawValue) {
   const units = getUnits();
-
-  if (config.unitKind === 'speed') {
-    return formatDistanceOrSpeed(rawValue, units.distance, config.unit);
-  }
-  if (config.unitKind === 'temp') {
-    return formatTemperature(rawValue, units.temperature);
-  }
-  return { value: rawValue, unit: config.unit };
+  if (def.unitKind === 'speed') return formatDistanceOrSpeed(rawValue, units.distance, def.unit);
+  if (def.unitKind === 'temp') return formatTemperature(rawValue, units.temperature);
+  return { value: rawValue, unit: def.unit };
 }
 
 /**

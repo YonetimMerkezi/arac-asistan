@@ -10,8 +10,8 @@
 import { readDtcCodes, clearDtcCodes } from '../obd/elm327.js';
 import { getState as getBluetoothState } from '../bluetooth/bluetooth-manager.js';
 import { recordDtcReading, listDtcHistory } from '../data/dtc-repository.js';
-import { getDtcDescription } from '../diagnostics/dtc-descriptions.js';
-import { generateDtcPdfReport } from '../diagnostics/dtc-report-pdf.js';
+import { getDtcDescription } from './dtc-descriptions.js';
+import { generateDtcPdfReport } from './dtc-report-pdf.js';
 import { saveAndShareReport } from '../trip/file-export.js';
 import { Browser } from '@capacitor/browser';
 import { logWarn } from '../core/logger.js';

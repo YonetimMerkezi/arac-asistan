@@ -10,7 +10,9 @@
  * ---------------------------------------------------------------------------
  */
 
-import { getThemeSettings, setThemeMode } from '../core/theme-manager.js';
+import { getThemeSettings, setThemeMode, setThemePackage } from '../core/theme-manager.js';
+import { THEME_PACKAGES } from '../core/theme-packages.js';
+import { iconMarkup } from './icons.js';
 import { getUnits, setUnits } from '../core/units-store.js';
 import { isMuted, setMuted } from '../voice/tts.js';
 import {
@@ -21,6 +23,11 @@ import {
   onStateChange as onBluetoothStateChange,
 } from '../bluetooth/bluetooth-manager.js';
 import { getLastPosition } from '../core/gps-tracker.js';
+import {
+  isBackgroundServiceEnabled,
+  startBackgroundService,
+  stopBackgroundService,
+} from '../core/background-service.js';
 import { createCorridor, listCorridors, deleteCorridor } from '../data/corridor-repository.js';
 import { refreshCorridors } from '../maps/average-speed-corridor.js';
 import { logWarn } from '../core/logger.js';
@@ -59,6 +66,18 @@ function render(container) {
       </div>
     </div>
 
+    <div class="sda-card" style="margin-bottom:16px;">
+      <p class="sda-card__label">Renk Paketi</p>
+      <div style="display:flex; gap:8px; margin-top:8px; flex-wrap:wrap;">
+        ${THEME_PACKAGES.map((pkg) => `
+          <button type="button" data-package="${pkg.id}" class="sda-nav-btn" style="display:flex; align-items:center; gap:6px;">
+            <span class="sda-color-swatch" style="background:hsl(${pkg.accentHue} 90% 60%); width:14px; height:14px;"></span>
+            ${pkg.label}
+          </button>
+        `).join('')}
+      </div>
+    </div>
+
     <h3 style="margin:4px 0;">Birimler</h3>
     <div class="sda-card" style="margin-bottom:16px;">
       <p class="sda-card__label">Mesafe / Hız</p>
@@ -75,11 +94,21 @@ function render(container) {
 
     <h3 style="margin:4px 0;">Ses</h3>
     <div class="sda-card" style="margin-bottom:16px;">
-      <button type="button" data-sound-toggle class="sda-nav-btn" style="width:100%;"></button>
+      <button type="button" data-sound-toggle class="sda-nav-btn" style="width:100%; flex-direction:row; gap:8px;"></button>
     </div>
 
     <h3 style="margin:4px 0;">Araç Bağlantısı</h3>
     <div data-device-section style="margin-bottom:16px;"></div>
+
+    <h3 style="margin:4px 0;">Arka Planda Çalışma</h3>
+    <div class="sda-card" style="margin-bottom:16px;">
+      <p class="sda-card__label">Otomatik Bağlantı</p>
+      <p style="font-size:0.85rem; color:var(--sda-text-muted); margin:4px 0 12px;">
+        Açıksa, ekran kilitliyken veya uygulama arka plandayken de araç
+        bağlantısı ve sesli uyarılar korunmaya çalışılır (pil tüketimini artırır).
+      </p>
+      <button type="button" data-bg-service-toggle class="sda-nav-btn" style="width:100%; flex-direction:row; gap:8px;"></button>
+    </div>
 
     <h3 style="margin:4px 0;">Ortalama Hız Koridorları</h3>
     <form data-corridor-form class="sda-card" style="display:grid; gap:8px; margin-bottom:12px;">
@@ -93,9 +122,11 @@ function render(container) {
   `;
 
   bindThemeButtons(container, theme.mode);
+  bindThemePackageButtons(container, theme.packageId);
   bindUnitButtons(container, units);
   bindSoundToggle(container, muted);
   renderDeviceSection(container);
+  bindBackgroundServiceToggle(container);
   bindCorridorForm(container);
   void renderCorridorList(container);
 }
@@ -111,6 +142,22 @@ function bindThemeButtons(container, activeMode) {
     button.addEventListener('click', async () => {
       await setThemeMode(mode);
       container.querySelectorAll('[data-theme]').forEach((b) => b.removeAttribute('aria-current'));
+      button.setAttribute('aria-current', 'page');
+    });
+  });
+}
+
+/**
+ * @param {HTMLElement} container
+ * @param {string} activePackageId
+ */
+function bindThemePackageButtons(container, activePackageId) {
+  container.querySelectorAll('[data-package]').forEach((button) => {
+    const id = button.getAttribute('data-package');
+    if (id === activePackageId) button.setAttribute('aria-current', 'page');
+    button.addEventListener('click', async () => {
+      await setThemePackage(id);
+      container.querySelectorAll('[data-package]').forEach((b) => b.removeAttribute('aria-current'));
       button.setAttribute('aria-current', 'page');
     });
   });
@@ -151,7 +198,9 @@ function bindSoundToggle(container, muted) {
   if (!button) return;
 
   const updateLabel = (isMutedNow) => {
-    button.textContent = isMutedNow ? '🔇 Sesli asistan kapalı (açmak için dokun)' : '🔊 Sesli asistan açık (kapatmak için dokun)';
+    const icon = iconMarkup(isMutedNow ? 'volume-off' : 'volume-on', { size: 20 });
+    const text = isMutedNow ? 'Sesli asistan kapalı (açmak için dokun)' : 'Sesli asistan açık (kapatmak için dokun)';
+    button.innerHTML = `${icon}<span>${text}</span>`;
   };
   updateLabel(muted);
 
@@ -159,6 +208,33 @@ function bindSoundToggle(container, muted) {
     const next = !isMuted();
     await setMuted(next);
     updateLabel(next);
+  });
+}
+
+/**
+ * @param {HTMLElement} container
+ */
+function bindBackgroundServiceToggle(container) {
+  const button = container.querySelector('[data-bg-service-toggle]');
+  if (!button) return;
+
+  const updateLabel = (enabled) => {
+    const icon = iconMarkup(enabled ? 'done' : 'bolt', { size: 20 });
+    const text = enabled ? 'Açık (kapatmak için dokun)' : 'Kapalı (açmak için dokun)';
+    button.innerHTML = `${icon}<span>${text}</span>`;
+  };
+
+  void isBackgroundServiceEnabled().then(updateLabel);
+
+  button.addEventListener('click', async () => {
+    const currentlyEnabled = await isBackgroundServiceEnabled();
+    if (currentlyEnabled) {
+      await stopBackgroundService();
+      updateLabel(false);
+    } else {
+      const started = await startBackgroundService();
+      updateLabel(started);
+    }
   });
 }
 
