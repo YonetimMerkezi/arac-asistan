@@ -59,10 +59,15 @@ export async function queryNearbyTaggedNodes(lat, lon, radiusMeters, tagKey, tag
     const response = await fetch(url);
     if (response.ok) {
       const data = await response.json();
+      // GEÇİCİ TEŞHİS: worker'dan gerçekte ne döndüğünü doğrudan göster.
+      window.alert(`[Teşhis] Worker cevabı (${url}):\nHTTP ${response.status}, success=${data.success}, count=${data.count ?? data.elements?.length ?? 0}`);
       if (data.success) return data.elements ?? [];
+    } else {
+      window.alert(`[Teşhis] Worker HTTP hatası: ${response.status} (${url})`);
     }
     logWarn('overpass-client', 'POI worker başarısız, doğrudan Overpass aynalarına düşülüyor');
   } catch (error) {
+    window.alert(`[Teşhis] Worker'a hiç ulaşılamadı: ${error?.name} - ${error?.message}`);
     logWarn('overpass-client', 'POI worker\'a ulaşılamadı, doğrudan Overpass aynalarına düşülüyor', error);
   }
 
