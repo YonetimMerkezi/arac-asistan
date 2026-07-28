@@ -21,13 +21,13 @@ import {
   tryAutoConnect,
   onStateChange as onBluetoothStateChange,
 } from '../bluetooth/bluetooth-manager.js';
-import { attachElm327Transport, runInitSequence, discoverSupportedPids, readVin, readFuelType } from '../obd/elm327.js';
+import { attachElm327Transport, detachElm327Transport, runInitSequence, discoverSupportedPids, readVin, readFuelType } from '../obd/elm327.js';
 import { setVehicleInfo } from './vehicle-info-store.js';
 import { initDashboardView } from '../ui/dashboard-view.js';
 import { speakConnectionGreeting } from '../voice/greeting.js';
 import { initVoiceAlerts } from '../voice/voice-alerts.js';
 import { initVoiceCommands } from '../voice/voice-commands.js';
-import { startListeningMode } from '../voice/stt.js';
+import { startListeningMode, stopListeningMode } from '../voice/stt.js';
 import { initDatabase } from '../data/database.js';
 import { initTripRecorder } from '../trip/trip-recorder.js';
 import { initTripView } from '../ui/trip-view.js';
@@ -46,6 +46,14 @@ import { initBackgroundService } from './background-service.js';
 
 /** @type {string} Karşılama cümlesinde kullanılan sahip adı. */
 const OWNER_NAME = 'Sedat';
+
+/**
+ * @type {boolean} ELM327 başlatma dizisinin şu anki bağlantı için zaten
+ * çalıştırılıp çalıştırılmadığı. Bluetooth durumu "connected" olduğunda
+ * (KAYNAĞI FARK ETMEKSİZİN - otomatik bağlanma veya Ayarlar'dan elle
+ * bağlanma) tekrar tekrar tetiklenmesin diye.
+ */
+let elm327InitializedForThisConnection = false;
 
 // GELİŞTİRME NOTU: Masaüstü devtools erişimi olmadığı için (yalnızca
 // telefondan geliştiriliyor), bootstrap() dışında (ör. "void" ile
@@ -92,9 +100,25 @@ async function bootstrap() {
     void checkMaintenanceDue();
     void initBackgroundService();
 
+    // KRİTİK: ELM327 başlatma dizisi artık Bluetooth bağlantı durumunu
+    // DİNLEYEREK tetiklenir - bağlantının kaynağı (uygulama açılışında
+    // otomatik bağlanma MI, yoksa Ayarlar ekranından kullanıcının ELLE
+    // seçtiği bir cihaza bağlanma MI) önemli değildir. Önceki sürümde bu
+    // yalnızca otomatik bağlanma akışında tetikleniyordu - Ayarlar'dan
+    // elle bağlanan bir kullanıcı için Bluetooth soketi açılıyor ama
+    // ELM327'ye hiç "ATZ" bile gönderilmiyordu, bu yüzden veri hiç akmıyordu.
+    onBluetoothStateChange((state) => {
+      if (state.status === 'connected' && !elm327InitializedForThisConnection) {
+        elm327InitializedForThisConnection = true;
+        void initializeElm327AndVoice();
+      } else if (state.status !== 'connected') {
+        elm327InitializedForThisConnection = false;
+      }
+    });
+
     // Kayıtlı OBD cihazı varsa sessizce bağlanmayı dene (araç çalıştığında).
-    // Cihaz seçimi/eşleştirme arayüzü Ayarlar ekranından yapılabiliyor.
-    void autoConnectAndInitializeObd();
+    // Bağlantı kurulursa yukarıdaki dinleyici ELM327 başlatmasını tetikler.
+    void tryAutoConnect();
 
     logInfo('app-init', 'Smart Drive AI başlatıldı');
   } catch (error) {
@@ -104,37 +128,40 @@ async function bootstrap() {
 }
 
 /**
- * Kayıtlı cihaza bağlanmayı dener; başarılı olursa ELM327 başlatma
- * dizisini, PID keşfini ve araç kimlik bilgilerini (VIN, yakıt tipi)
- * çalıştırır. Bağlantı yoksa sessizce çıkar - kullanıcı daha sonra
- * Ayarlar ekranından manuel bağlanabilir.
+ * Bluetooth bağlantısı kurulduğunda (kaynağı fark etmeksizin) ELM327
+ * başlatma dizisini, PID keşfini, araç kimlik bilgilerini, karşılama
+ * cümlesini ve sesli komut dinlemeyi başlatır.
  * @returns {Promise<void>}
  */
-async function autoConnectAndInitializeObd() {
-  const connected = await tryAutoConnect();
-  if (!connected) return;
+async function initializeElm327AndVoice() {
+  try {
+    attachElm327Transport();
+    await runInitSequence();
 
-  attachElm327Transport();
-  await runInitSequence();
+    const [supportedPids, vin, fuelType] = await Promise.all([
+      discoverSupportedPids(),
+      readVin(),
+      readFuelType(),
+    ]);
 
-  const [supportedPids, vin, fuelType] = await Promise.all([
-    discoverSupportedPids(),
-    readVin(),
-    readFuelType(),
-  ]);
+    setVehicleInfo({ supportedPids, vin, fuelType });
 
-  setVehicleInfo({ supportedPids, vin, fuelType });
+    logInfo('app-init', 'Araç bilgileri alındı', {
+      supportedPidCount: supportedPids.length,
+      vin,
+      fuelType,
+    });
 
-  logInfo('app-init', 'Araç bilgileri alındı', {
-    supportedPidCount: supportedPids.length,
-    vin,
-    fuelType,
-  });
-
-  initVoiceAlerts();
-  initVoiceCommands();
-  await speakConnectionGreeting(OWNER_NAME);
-  void startListeningMode();
+    initVoiceAlerts();
+    initVoiceCommands();
+    await speakConnectionGreeting(OWNER_NAME);
+    void startListeningMode();
+  } catch (error) {
+    logError('app-init', 'ELM327 başlatma sırasında hata', error);
+    detachElm327Transport();
+    stopListeningMode();
+    elm327InitializedForThisConnection = false;
+  }
 }
 
 /**
