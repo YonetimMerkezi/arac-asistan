@@ -25,6 +25,9 @@ const CATEGORY_TAGS = {
 /**
  * @typedef {Object} PoiResult
  * @property {string} name
+ * @property {string|null} brand - OSM "brand" etiketi (varsa) - akaryakıt
+ *   istasyonlarını fiyat listesindeki markayla eşleştirmek için "name"den
+ *   daha güvenilirdir (ör. name="Opet Elazığ Yolu", brand="Opet").
  * @property {number} lat
  * @property {number} lon
  * @property {number} distanceKm
@@ -48,6 +51,7 @@ export async function findNearbyPoi(category, lat, lon, radiusMeters = 5000) {
     .filter((el) => typeof el.lat === 'number' && typeof el.lon === 'number')
     .map((el) => ({
       name: el.tags?.name ?? defaultNameFor(category),
+      brand: el.tags?.brand ?? null,
       lat: el.lat,
       lon: el.lon,
       distanceKm: haversineDistanceKm(lat, lon, el.lat, el.lon),
