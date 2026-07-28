@@ -271,11 +271,28 @@ function renderDeviceSection(container) {
         <p class="sda-card__value" style="font-size:1rem;">${d.name ?? 'İsimsiz cihaz'}</p>
         <p class="sda-card__label">${d.address}</p>
       </button>
-    `).join('');
+    `).join('') + '<p data-connect-status class="sda-card__label"></p>';
+
+    const statusEl = section.querySelector('[data-connect-status]');
 
     section.querySelectorAll('[data-connect]').forEach((button) => {
-      button.addEventListener('click', () => {
-        connectToDevice(button.getAttribute('data-connect'), button.getAttribute('data-name'));
+      button.addEventListener('click', async () => {
+        const address = button.getAttribute('data-connect');
+        const name = button.getAttribute('data-name');
+
+        if (statusEl) statusEl.textContent = `${name || address} cihazına bağlanılıyor...`;
+        button.disabled = true;
+
+        const ok = await connectToDevice(address, name);
+
+        if (!ok) {
+          button.disabled = false;
+          if (statusEl) {
+            statusEl.textContent = 'Bağlantı kurulamadı. Cihazın açık ve menzilde olduğundan emin olun, tekrar deneyin.';
+          }
+        }
+        // Başarılıysa bluetooth-manager'ın "connected" durumu zaten bu
+        // bölümü otomatik yeniden çizecek (onBluetoothStateChange aboneliği).
       });
     });
   });
