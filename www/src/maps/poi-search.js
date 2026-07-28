@@ -47,9 +47,8 @@ export async function findNearbyPoi(category, lat, lon, radiusMeters = 5000) {
   const [tagKey, tagValue] = tagPair;
 
   const elements = await queryNearbyTaggedNodes(lat, lon, radiusMeters, tagKey, tagValue);
-  window.alert(`[Teşhis-3] queryNearbyTaggedNodes ham sonuç: ${elements.length} eleman`);
 
-  const filtered = elements
+  return elements
     .filter((el) => typeof el.lat === 'number' && typeof el.lon === 'number')
     .map((el) => ({
       name: el.name ?? defaultNameFor(category),
@@ -59,9 +58,6 @@ export async function findNearbyPoi(category, lat, lon, radiusMeters = 5000) {
       distanceKm: haversineDistanceKm(lat, lon, el.lat, el.lon),
     }))
     .sort((a, b) => a.distanceKm - b.distanceKm);
-
-  window.alert(`[Teşhis-3] Filtre sonrası: ${filtered.length} eleman`);
-  return filtered;
 }
 
 /**
