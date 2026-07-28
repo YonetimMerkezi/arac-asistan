@@ -6,19 +6,19 @@ import com.getcapacitor.BridgeActivity
 /**
  * MainActivity
  * ---------------------------------------------------------------------------
- * Capacitor'un ana Activity'si. Tek eklediğimiz şey, özel yazdığımız
- * BluetoothClassicPlugin'i köprüye (bridge) kaydetmek - aksi halde JS
- * tarafındaki Capacitor.registerPlugin('BluetoothClassic') çağrısı
- * native karşılığını bulamaz.
+ * Capacitor'un ana Activity'si. Özel yazdığımız eklentileri köprüye
+ * (bridge) kaydeder - aksi halde JS tarafındaki Capacitor.registerPlugin(...)
+ * çağrıları native karşılıklarını bulamaz.
  *
  * NOT: Bu dosya `npx cap add android` ile tam Android proje iskeleti
  * oluşturulduğunda otomatik üretilen MainActivity.kt'nin YERİNE
- * kullanılmalıdır (registerPlugin satırı eklenmiş hali).
+ * kullanılmalıdır (registerPlugin satırları eklenmiş hali).
  * ---------------------------------------------------------------------------
  */
 class MainActivity : BridgeActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         registerPlugin(BluetoothClassicPlugin::class.java)
+        registerPlugin(BackgroundServicePlugin::class.java)
         super.onCreate(savedInstanceState)
     }
 }
