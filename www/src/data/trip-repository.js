@@ -99,27 +99,6 @@ export async function listTrips(limit = 50) {
 }
 
 /**
- * Belirli bir zaman damgasından SONRA başlayan tüm yolculukları (tamamlanmış
- * veya devam eden) en yeniden en eskiye sıralı döndürür. ai/maintenance-predictor.js
- * (günlük ortalama km hesabı) ve ai/weekly-report.js (haftalık özet) kullanır.
- * @param {number} sinceUnixMs
- * @returns {Promise<Trip[]>}
- */
-export async function listTripsSince(sinceUnixMs) {
-  try {
-    const db = getDb();
-    const result = await db.query(
-      'SELECT * FROM trips WHERE start_time >= ? ORDER BY start_time DESC',
-      [sinceUnixMs],
-    );
-    return result.values ?? [];
-  } catch (error) {
-    logError('trip-repository', 'Belirli tarihten sonraki yolculuklar okunamadı', error);
-    return [];
-  }
-}
-
-/**
  * Tek bir yolculuğun detayını (özet + tüm GPS noktaları) döndürür.
  * @param {number} tripId
  * @returns {Promise<{trip: Trip|null, points: TripPoint[]}>}
