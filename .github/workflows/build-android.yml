@@ -5,9 +5,9 @@
 # Amaç: Sedat'ın bilgisayara ihtiyaç duymadan, yalnızca telefondan yaptığı
 # değişiklikleri GitHub'a göndererek (push/upload) çalışan bir APK elde
 # edebilmesi. Android platformu repoda TUTULMAZ - her çalışmada
-# `npx cap add android` ile sıfırdan üretilir, ardından özel yazılmış
-# BluetoothClassicPlugin.kt/MainActivity.kt geri kopyalanır, Kotlin desteği
-# etkinleştirilir (bkz. scripts/patch-gradle-kotlin.js) ve gerekli izinler
+# `npx cap add android` ile sıfırdan üretilir, ardından özel yazılmış native
+# dosyalar (Bluetooth eklentisi, arka plan servisi, MainActivity, uygulama
+# ikonu/bildirim ikonu/açılış ekranı) geri kopyalanır ve gerekli izinler
 # AndroidManifest.xml'e eklenir (bkz. scripts/patch-manifest.js).
 #
 # Sonuç: Her çalıştırmanın sonunda "Actions" sekmesinde indirilebilir bir
@@ -55,15 +55,21 @@ jobs:
           rm -rf android
           npx cap add android
 
-      - name: Özel plugin/MainActivity dosyalarını geri koy
+      - name: Özel plugin/MainActivity/servis dosyalarını geri koy
         run: |
           mkdir -p android/app/src/main/java/com/sedat/smartdriveai
           cp /tmp/custom-android/smartdriveai/*.kt android/app/src/main/java/com/sedat/smartdriveai/
 
-      - name: Kotlin desteğini etkinleştir
-        run: node scripts/patch-gradle-kotlin.js
+      - name: Uygulama ikonu / bildirim ikonu / açılış ekranını yerleştir
+        run: |
+          if [ -d "assets/android-res" ]; then
+            cp -r assets/android-res/* android/app/src/main/res/
+            echo "Özel ikon/açılış ekranı kaynakları kopyalandı."
+          else
+            echo "assets/android-res bulunamadı, Capacitor'ün varsayılan ikonu kullanılacak."
+          fi
 
-      - name: Bluetooth izinlerini manifest'e ekle
+      - name: İzinleri ve servis kaydını manifest'e ekle
         run: node scripts/patch-manifest.js
 
       - name: Web varlıklarını Android projesine senkronize et
