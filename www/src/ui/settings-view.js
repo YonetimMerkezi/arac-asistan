@@ -259,66 +259,92 @@ function renderDeviceSection(container) {
     return;
   }
 
-  // ÖNEMLİ: "connecting"/"reconnecting" durumunda listeyi YENİDEN ÇEKMİYORUZ.
-  // Önceki sürümde her durum değişikliği (connecting dahil) tüm bölümü
-  // "Cihazlar taranıyor..." ile değiştirip listPairedDevices()'i yeniden
-  // çağırıyordu - bu, kullanıcının az önce tıkladığı "bağlanılıyor..." /
-  // "bağlantı kurulamadı" mesajını göstermeden SİLİYORDU (ekranda görülen
-  // "titreme" buydu). Artık bağlanma sürecinde sabit, tek bir durum kartı
-  // gösteriliyor.
-  if (state.status === 'connecting' || state.status === 'reconnecting') {
+  // KRİTİK MİMARİ NOT: connecting/reconnecting/disconnected durumlarının
+  // HEPSİ aynı, KALICI liste yapısını kullanır. Liste yalnızca BİR KEZ
+  // (ilk çağrıda) inşa edilir - her durum değişikliğinde section.innerHTML
+  // baştan yazılmaz. Önceki sürümde her durum değişikliği (connecting dahil)
+  // tüm listeyi yok edip yeniden çekiyordu; bu da tıklama sonrası gösterilen
+  // "bağlanılıyor"/"bağlanamadı" mesajının ait olduğu DOM düğümünün
+  // ortadan kaldırılmasına, dolayısıyla mesajın hiç görünmemesine
+  // ("titreme" olarak algılanan art arda yeniden çizim) sebep oluyordu.
+  if (!section.querySelector('[data-device-list-root]')) {
     section.innerHTML = `
-      <div class="sda-card">
-        <p class="sda-card__label">${state.status === 'connecting' ? 'Bağlanıyor' : 'Yeniden bağlanıyor'}</p>
-        <p class="sda-card__value" style="font-size:1rem;">${state.deviceName ?? state.deviceAddress ?? '...'}</p>
+      <div data-device-list-root>
+        <p class="sda-card__label">Cihazlar taranıyor...</p>
       </div>
+      <p data-connect-status class="sda-card__label" style="margin-top:8px;"></p>
     `;
+    void loadDeviceList(section);
+  }
+
+  updateConnectStatusLine(section, state);
+}
+
+/**
+ * Eşleştirilmiş cihaz listesini BİR KEZ yükler ve tıklama olaylarını bağlar.
+ * Sonraki durum değişikliklerinde bu liste yeniden inşa EDİLMEZ.
+ * @param {HTMLElement} section
+ */
+async function loadDeviceList(section) {
+  const listRoot = section.querySelector('[data-device-list-root]');
+  if (!listRoot) return;
+
+  const devices = await listPairedDevices();
+
+  if (devices.length === 0) {
+    listRoot.innerHTML = '<p class="sda-card__label">Eşleştirilmiş cihaz yok. Önce Android Bluetooth ayarlarından ELM327 adaptörünü eşleştirin.</p>';
     return;
   }
 
-  section.innerHTML = '<p class="sda-card__label">Cihazlar taranıyor...</p>';
-  void listPairedDevices().then((devices) => {
-    // Bu asenkron sonuç döndüğünde bağlantı durumu artık "disconnected"
-    // değilse (ör. kullanıcı hızlıca bağlandıysa) eski listeyi ÇİZME -
-    // aksi halde "connected" kartının üzerine yazabilir.
-    if (getBluetoothState().status !== 'disconnected') return;
+  listRoot.innerHTML = devices.map((d) => `
+    <button type="button" data-connect="${d.address}" data-name="${d.name ?? ''}" class="sda-card" style="display:block; width:100%; text-align:left; margin-bottom:8px; border:none;">
+      <p class="sda-card__value" style="font-size:1rem;">${d.name ?? 'İsimsiz cihaz'}</p>
+      <p class="sda-card__label">${d.address}</p>
+    </button>
+  `).join('');
 
-    if (devices.length === 0) {
-      section.innerHTML = '<p class="sda-card__label">Eşleştirilmiş cihaz yok. Önce Android Bluetooth ayarlarından ELM327 adaptörünü eşleştirin.</p>';
-      return;
-    }
+  listRoot.querySelectorAll('[data-connect]').forEach((button) => {
+    button.addEventListener('click', async () => {
+      const address = button.getAttribute('data-connect');
+      const name = button.getAttribute('data-name');
+      const statusEl = section.querySelector('[data-connect-status]');
 
-    section.innerHTML = devices.map((d) => `
-      <button type="button" data-connect="${d.address}" data-name="${d.name ?? ''}" class="sda-card" style="display:block; width:100%; text-align:left; margin-bottom:8px; border:none;">
-        <p class="sda-card__value" style="font-size:1rem;">${d.name ?? 'İsimsiz cihaz'}</p>
-        <p class="sda-card__label">${d.address}</p>
-      </button>
-    `).join('') + '<p data-connect-status class="sda-card__label"></p>';
+      button.disabled = true;
+      if (statusEl) statusEl.textContent = `${name || address} cihazına bağlanılıyor...`;
 
-    const statusEl = section.querySelector('[data-connect-status]');
+      const ok = await connectToDevice(address, name);
 
-    section.querySelectorAll('[data-connect]').forEach((button) => {
-      button.addEventListener('click', async () => {
-        const address = button.getAttribute('data-connect');
-        const name = button.getAttribute('data-name');
+      // GEÇİCİ TEŞHİS: herhangi bir DOM yeniden çizim yarışından tamamen
+      // bağımsız, kesin görünür bir sonuç. Sorun çözülünce kaldırılacak.
+      window.alert(`[Teşhis] connectToDevice("${address}") sonucu: ${ok}`);
 
-        // NOT: connectToDevice() çağrısı hemen "connecting" durumuna geçer,
-        // bu da yukarıdaki durum dinleyicisini tetikleyip bu bölümü
-        // "Bağlanıyor" kartına çevirir - bu yüzden burada statusEl/button'a
-        // yazdığımız değerler çoğu zaman hiç görünmeden değişir; asıl kalıcı
-        // geri bildirim yukarıdaki "connecting" ve aşağıdaki hata bloğu.
-        button.disabled = true;
-        const ok = await connectToDevice(address, name);
-
-        if (!ok && getBluetoothState().status === 'disconnected') {
-          button.disabled = false;
-          if (statusEl) {
-            statusEl.textContent = 'Bağlantı kurulamadı. Cihazın açık ve menzilde olduğundan emin olun, tekrar deneyin.';
-          }
-        }
-      });
+      button.disabled = false;
+      if (!ok && statusEl) {
+        statusEl.textContent = 'Bağlantı kurulamadı. Cihazın açık ve menzilde olduğundan emin olun, tekrar deneyin.';
+      }
     });
   });
+}
+
+/**
+ * connecting/reconnecting durumlarını KALICI durum satırına yazar - listeyi
+ * yeniden çizmez, yalnızca metni günceller.
+ * @param {HTMLElement} section
+ * @param {import('../bluetooth/bluetooth-manager.js').BluetoothState} state
+ */
+function updateConnectStatusLine(section, state) {
+  const statusEl = section.querySelector('[data-connect-status]');
+  if (!statusEl) return;
+
+  if (state.status === 'connecting') {
+    statusEl.textContent = `${state.deviceName ?? state.deviceAddress ?? 'Cihaz'} cihazına bağlanılıyor...`;
+  } else if (state.status === 'reconnecting') {
+    statusEl.textContent = 'Yeniden bağlanılıyor...';
+  }
+  // "disconnected" durumunda burada BİLİNÇLİ OLARAK hiçbir şey yazılmıyor -
+  // tıklama işleyicisinin yazdığı "bağlantı kurulamadı" mesajının üzerine
+  // yazıp silmemek için. Mesaj yalnızca kullanıcı tekrar bir cihaza
+  // dokunduğunda ("bağlanılıyor..." ile) değişir.
 }
 
 /**
