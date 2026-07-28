@@ -22,6 +22,7 @@ import { findNearbyPoi } from '../maps/poi-search.js';
 import { getFavoriteLocation, setFavoriteLocation } from '../maps/favorites-store.js';
 import { reverseGeocodeIlIlce } from '../maps/reverse-geocode.js';
 import { getFuelPrices, matchStationByName } from '../maps/fuel-price-service.js';
+import { getFavoriteBrands, isFavoriteBrand, toggleFavoriteBrand } from '../core/favorite-brands-store.js';
 import { iconMarkup } from './icons.js';
 import { logWarn } from '../core/logger.js';
 
@@ -77,6 +78,8 @@ export function initNavigationView() {
     </div>
     <div data-map style="height: 55vh; border-radius: var(--sda-radius-md); overflow:hidden;"></div>
     <p data-status class="sda-card__label" style="margin-top:8px;"></p>
+    <div data-poi-list style="margin-top:8px;"></div>
+    <div data-price-table style="margin-top:16px;"></div>
   `;
 
   map = L.map(container.querySelector('[data-map]')).setView(DEFAULT_CENTER, 6);
@@ -270,12 +273,16 @@ function bindPoiButtons(container) {
       const category = button.getAttribute('data-poi');
       const current = getLastPosition();
       const statusEl = container.querySelector('[data-status]');
+      const listEl = container.querySelector('[data-poi-list]');
+      const priceTableEl = container.querySelector('[data-price-table]');
+      if (priceTableEl) priceTableEl.innerHTML = '';
       if (!current) {
         if (statusEl) statusEl.textContent = 'Konum henüz alınamadı.';
         return;
       }
 
       if (statusEl) statusEl.textContent = 'Aranıyor...';
+      if (listEl) listEl.innerHTML = '';
 
       let results = await findNearbyPoi(category, current.latitude, current.longitude, 7000);
       if (results.length === 0) {
@@ -285,14 +292,16 @@ function bindPoiButtons(container) {
         results = await findNearbyPoi(category, current.latitude, current.longitude, 20000);
       }
 
-      // ÖNCE İŞARETÇİLERİ ÇİZ (fiyat bilgisi olmadan) - bu, aşağıdaki fiyat
-      // sorgusu yavaş/başarısız olsa bile kullanıcının istasyonları HEMEN
-      // görmesini sağlar. Fiyat sorgusu ayrı bir dış servise (Nominatim)
-      // bağımlı olduğu için burada bloklayıcı olmamalı.
+      // ÖNCE İŞARETÇİLERİ VE LİSTEYİ ÇİZ (fiyat bilgisi olmadan) - bu,
+      // aşağıdaki fiyat sorgusu yavaş/başarısız olsa bile kullanıcının
+      // istasyonları HEMEN görmesini sağlar. Fiyat sorgusu ayrı bir dış
+      // servise (Nominatim) bağımlı olduğu için burada bloklayıcı olmamalı.
       poiMarkers.forEach((m) => map.removeLayer(m));
       poiMarkers = results.slice(0, 15).map((poi) => L.marker([poi.lat, poi.lon])
         .bindPopup(`${poi.name} (${poi.distanceKm.toFixed(1)} km)`)
         .addTo(map));
+
+      renderPoiList(listEl, results.slice(0, 15));
 
       if (results.length > 0) {
         const bounds = L.latLngBounds(results.slice(0, 15).map((p) => [p.lat, p.lon]));
@@ -305,25 +314,123 @@ function bindPoiButtons(container) {
           : 'Bu bölgede OpenStreetMap üzerinde kayıtlı sonuç bulunamadı.';
       }
 
-      // SONRA fiyatları arka planda çek ve işaretçi popup'larını GÜNCELLE -
-      // bu adım başarısız/yavaş olursa yalnızca fiyat bilgisi eksik kalır,
-      // istasyonlar zaten haritada görünüyor olur.
+      // SONRA fiyatları arka planda çek ve işaretçi popup'larını + listeyi
+      // GÜNCELLE - bu adım başarısız/yavaş olursa yalnızca fiyat bilgisi
+      // eksik kalır, istasyonlar zaten haritada/listede görünüyor olur.
       if (category === 'fuel' && results.length > 0) {
-        void enhanceFuelMarkersWithPrices(results, current, statusEl);
+        void enhanceFuelMarkersWithPrices(results, current, statusEl, listEl);
+        void renderLocationPriceTable(priceTableEl, current);
       }
     });
   });
 }
 
 /**
- * Zaten çizilmiş yakıt istasyonu işaretçilerinin popup içeriğini, konumun
- * il/ilçesine göre çekilen güncel fiyatlarla günceller. Bu fonksiyon
- * bindPoiButtons'ın ana akışını BLOKLAMAZ - ayrı bir arka plan adımıdır.
+ * Konumun il/ilçesindeki TÜM dağıtıcıların güncel fiyatlarını, haritadaki
+ * işaretçilerle eşleştirmeye ÇALIŞMADAN, doğrudan bağımsız bir tablo olarak
+ * gösterir. OSM'deki marka etiketleri çoğu istasyonda eksik olduğu için bu,
+ * "en azından bölgedeki tüm fiyatları güvenilir şekilde gör" ihtiyacını
+ * karşılar. Favori markalar (varsa) en üstte, geri kalanı fiyata göre
+ * (ucuzdan pahalıya) sıralanır.
+ * @param {HTMLElement|null} priceTableEl
+ * @param {import('../core/gps-tracker.js').LivePosition} current
+ */
+async function renderLocationPriceTable(priceTableEl, current) {
+  if (!priceTableEl) return;
+
+  const location = await reverseGeocodeIlIlce(current.latitude, current.longitude);
+  if (!location) return;
+
+  const stations = await getFuelPrices(location.il, location.ilce, current.longitude);
+  const withPrice = stations.filter((s) => s.benzin !== null);
+  if (withPrice.length === 0) return;
+
+  renderPriceTableRows(priceTableEl, withPrice, location);
+}
+
+/**
+ * Fiyat tablosunu favori sırasına göre çizer - favoriler en üstte (kendi
+ * aralarında alfabetik), geri kalanı ucuzdan pahalıya. Her satırdaki yıldıza
+ * dokunmak favori durumunu değiştirir ve listeyi anında yeniden sıralar.
+ * @param {HTMLElement} priceTableEl
+ * @param {import('../maps/fuel-price-service.js').FuelStationPrice[]} stations
+ * @param {{il: string, ilce: string}} location
+ */
+function renderPriceTableRows(priceTableEl, stations, location) {
+  const favorites = stations.filter((s) => isFavoriteBrand(s.dagitici))
+    .sort((a, b) => a.dagitici.localeCompare(b.dagitici, 'tr'));
+  const others = stations.filter((s) => !isFavoriteBrand(s.dagitici))
+    .sort((a, b) => (a.benzin ?? Infinity) - (b.benzin ?? Infinity));
+  const ordered = [...favorites, ...others];
+
+  priceTableEl.innerHTML = `
+    <p class="sda-card__label">${location.il} / ${location.ilce} - Yakıt Fiyatları</p>
+    ${ordered.map((s) => `
+      <div class="sda-card" style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
+        <span style="display:flex; align-items:center; gap:8px;">
+          <button type="button" data-fav-brand="${s.dagitici}" style="background:none; border:none; font-size:1.1rem; padding:0;">
+            ${isFavoriteBrand(s.dagitici) ? '⭐' : '☆'}
+          </button>
+          <span class="sda-card__value" style="font-size:0.95rem;">${s.dagitici}</span>
+        </span>
+        <span class="sda-card__label">Benzin ${s.benzin ?? '-'} ₺ · Motorin ${s.motorin ?? '-'} ₺${s.lpg ? ` · LPG ${s.lpg} ₺` : ''}</span>
+      </div>
+    `).join('')}
+  `;
+
+  priceTableEl.querySelectorAll('[data-fav-brand]').forEach((starBtn) => {
+    starBtn.addEventListener('click', async () => {
+      await toggleFavoriteBrand(starBtn.getAttribute('data-fav-brand'));
+      renderPriceTableRows(priceTableEl, stations, location); // favori değişti, yeniden sırala.
+    });
+  });
+}
+
+/**
+ * Sonuçları, en yakından en uzağa doğru haritanın altına bir liste olarak
+ * çizer. Bir satıra dokunmak haritayı o noktaya ortalayıp popup'ını açar.
+ * @param {HTMLElement|null} listEl
+ * @param {import('../maps/poi-search.js').PoiResult[]} results
+ */
+function renderPoiList(listEl, results) {
+  if (!listEl) return;
+  if (results.length === 0) {
+    listEl.innerHTML = '';
+    return;
+  }
+
+  listEl.innerHTML = results.map((poi, index) => `
+    <button type="button" data-poi-row="${index}" class="sda-card" style="display:flex; justify-content:space-between; align-items:center; width:100%; text-align:left; margin-bottom:6px; border:none;">
+      <span>
+        <span class="sda-card__value" style="font-size:0.95rem;">${poi.name}</span>
+        <span data-poi-row-price class="sda-card__label" style="display:block;"></span>
+      </span>
+      <span class="sda-card__label">${poi.distanceKm.toFixed(1)} km</span>
+    </button>
+  `).join('');
+
+  listEl.querySelectorAll('[data-poi-row]').forEach((row) => {
+    row.addEventListener('click', () => {
+      const index = Number(row.getAttribute('data-poi-row'));
+      const marker = poiMarkers[index];
+      if (!marker) return;
+      map.setView(marker.getLatLng(), 16);
+      marker.openPopup();
+    });
+  });
+}
+
+/**
+ * Zaten çizilmiş yakıt istasyonu işaretçilerinin popup içeriğini VE liste
+ * satırlarını, konumun il/ilçesine göre çekilen güncel fiyatlarla günceller.
+ * Bu fonksiyon bindPoiButtons'ın ana akışını BLOKLAMAZ - ayrı bir arka
+ * plan adımıdır.
  * @param {import('../maps/poi-search.js').PoiResult[]} results
  * @param {import('../core/gps-tracker.js').LivePosition} current
  * @param {HTMLElement|null} statusEl
+ * @param {HTMLElement|null} listEl
  */
-async function enhanceFuelMarkersWithPrices(results, current, statusEl) {
+async function enhanceFuelMarkersWithPrices(results, current, statusEl, listEl) {
   const location = await reverseGeocodeIlIlce(current.latitude, current.longitude);
   if (!location) return;
 
@@ -334,8 +441,11 @@ async function enhanceFuelMarkersWithPrices(results, current, statusEl) {
     const price = matchStationByName(stations, poi.brand ?? poi.name);
     if (!price) return;
 
-    const priceLine = `<br>Benzin: ${price.benzin ?? '-'} ₺ · Motorin: ${price.motorin ?? '-'} ₺${price.lpg ? ` · LPG: ${price.lpg} ₺` : ''}`;
-    poiMarkers[index]?.setPopupContent(`${poi.name} (${poi.distanceKm.toFixed(1)} km)${priceLine}`);
+    const priceLine = `Benzin: ${price.benzin ?? '-'} ₺ · Motorin: ${price.motorin ?? '-'} ₺${price.lpg ? ` · LPG: ${price.lpg} ₺` : ''}`;
+    poiMarkers[index]?.setPopupContent(`${poi.name} (${poi.distanceKm.toFixed(1)} km)<br>${priceLine}`);
+
+    const rowPriceEl = listEl?.querySelector(`[data-poi-row="${index}"] [data-poi-row-price]`);
+    if (rowPriceEl) rowPriceEl.textContent = priceLine;
   });
 
   if (statusEl) statusEl.textContent += ' · Fiyat için işaretçiye dokun.';
