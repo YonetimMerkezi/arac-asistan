@@ -17,15 +17,17 @@ import { logWarn } from '../core/logger.js';
 
 /**
  * @type {string[]} Overpass halka açık ayna sunucuları, sırayla denenir.
- * TEK NEDENİ: overpass-api.de (birincil, resmi) yoğun saatlerde zaman
- * aşımına uğrayabiliyor/504 dönebiliyor - bu durumda sessizce "sonuç yok"
- * gibi görünüyordu, halbuki asıl sorun sunucuya ulaşılamamasıydı. Birden
- * fazla ayna denemek bu tek-sunucu kesintisini büyük ölçüde tolere eder.
+ * TEK NEDENİ: overpass-api.de (birincil, resmi) Nisan 2026'dan beri
+ * belgelenmiş, süregelen bir aşırı yük/kötüye kullanım sorunu yaşıyor
+ * (bkz. wiki.openstreetmap.org/wiki/Overpass_API/status) - bu bizim
+ * kodumuzdan bağımsız, servisin kendi güvenilirlik sorunu. Birden fazla
+ * ayna denemek bu kesintiyi büyük ölçüde tolere eder.
  */
 const OVERPASS_ENDPOINTS = [
   'https://overpass-api.de/api/interpreter',
   'https://overpass.kumi.systems/api/interpreter',
   'https://overpass.openstreetmap.ru/api/interpreter',
+  'https://overpass.private.coffee/api/interpreter',
 ];
 
 /** @type {number} İstek zaman aşımı (ms), her ayna için ayrı ayrı uygulanır. */
@@ -36,13 +38,9 @@ const REQUEST_TIMEOUT_MS = 8000;
  * olursa (zaman aşımı, 5xx, ağ hatası) sırayla yedek aynaları dener.
  * @param {string} query - Overpass QL gövdesi (örn. "[out:json];node(...);out;").
  * @returns {Promise<Array<Object>>} `elements` dizisi; TÜM aynalar
- *   başarısız olursa boş dizi (bu durumda gerçekten "sonuç yok" ile
- *   "sunucuya ulaşılamadı" ayrımı yapılamaz - çağıran taraf isterse
- *   kullanıcıya "tekrar dene" önerebilir).
+ *   başarısız olursa boş dizi.
  */
 export async function runOverpassQuery(query) {
-  const attempts = [];
-
   for (const endpoint of OVERPASS_ENDPOINTS) {
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
@@ -56,27 +54,22 @@ export async function runOverpassQuery(query) {
       });
 
       if (!response.ok) {
-        attempts.push(`${endpoint}: HTTP ${response.status}`);
         logWarn('overpass-client', `${endpoint} başarısız: HTTP ${response.status}, sıradaki ayna deneniyor`);
         continue;
       }
 
       const data = await response.json();
-      const count = data.elements?.length ?? 0;
-      // GEÇİCİ TEŞHİS: cihazda gerçekte ne olduğunu doğrudan göster.
-      window.alert(`[Teşhis] Overpass başarılı: ${endpoint}\nSonuç sayısı: ${count}`);
       return data.elements ?? [];
     } catch (error) {
-      attempts.push(`${endpoint}: ${error?.name ?? 'Hata'} - ${error?.message ?? error}`);
+      // Ağ yokken (offline) bu beklenen bir durumdur - OBD özellikleri
+      // etkilenmeden çalışmaya devam etmeli, bu yüzden warn seviyesinde kalır.
       logWarn('overpass-client', `${endpoint} sorgusu başarısız, sıradaki ayna deneniyor`, error);
     } finally {
       clearTimeout(timeout);
     }
   }
 
-  logWarn('overpass-client', 'Tüm Overpass aynaları başarısız oldu');
-  // GEÇİCİ TEŞHİS: tüm denemelerin gerçek hata mesajlarını doğrudan göster.
-  window.alert(`[Teşhis] Tüm Overpass aynaları başarısız:\n${attempts.join('\n')}`);
+  logWarn('overpass-client', 'Tüm Overpass aynaları başarısız oldu (bilinen dış servis kesintisi olabilir)');
   return [];
 }
 
