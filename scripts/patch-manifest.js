@@ -4,16 +4,12 @@
  * `npx cap add android` her CI çalışmasında AndroidManifest.xml'i sıfırdan
  * üretir (proje repoda "android/" platformunu commit etmiyor - bkz.
  * .github/workflows/build-android.yml). Bu betik, üretilen manifest'e
- * BluetoothClassicPlugin.kt/gps-tracker.js gibi modüllerin ihtiyaç duyduğu
- * izinleri ekler.
+ * gerekli izinleri VE SmartDriveForegroundService kaydını ekler.
  *
- * DÜZELTME (kritik hata): Önceki sürüm, bir iznin manifest'te zaten olup
- * olmadığını `line.trim().split(' android:')[0]` ile kontrol ediyordu.
- * Bu, HER izin satırı için aynı jenerik "<uses-permission" dizesini üretiyordu
- * (çünkü her satırda "android:name=" öncesinde bir boşluk var) - yani script
- * tüm izinleri TEK bir grup olarak görüyor, biri "zaten var" sanılırsa hepsi
- * atlanabiliyordu. Bu yüzden ACCESS_FINE_LOCATION/ACCESS_COARSE_LOCATION
- * hiç eklenmemişti. Artık her iznin GERÇEK adı (android:name="...") ayrı
+ * DÜZELTME (geçmiş hata): Önceki sürüm, bir iznin manifest'te zaten olup
+ * olmadığını `line.trim().split(' android:')[0]` ile kontrol ediyordu - bu
+ * HER satır için aynı jenerik "<uses-permission" dizesini üretiyordu, yani
+ * script tüm izinleri tek grup sanıyordu. Artık her iznin GERÇEK adı ayrı
  * ayrı kontrol ediliyor.
  *
  * Node.js'in yerleşik `fs` modülü dışında bağımlılık kullanılmaz.
@@ -35,42 +31,72 @@ const REQUIRED_PERMISSIONS = [
   '    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />',
   '    <uses-permission android:name="android.permission.INTERNET" />',
   '    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />',
+  '    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />',
+  '    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_CONNECTED_DEVICE" />',
+  '    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />',
+  '    <uses-permission android:name="android.permission.WAKE_LOCK" />',
 ];
+
+/** @type {string} <application> içine (arka plan servisi) eklenecek servis kaydı. */
+const SERVICE_DECLARATION = `        <service
+            android:name=".SmartDriveForegroundService"
+            android:enabled="true"
+            android:exported="false"
+            android:foregroundServiceType="connectedDevice" />
+`;
 
 /**
  * Bir izin satırından gerçek izin adını (android:name="...") çıkarır.
  * @param {string} line
- * @returns {string} ör. `android:name="android.permission.RECORD_AUDIO"`.
+ * @returns {string}
  */
 function extractPermissionKey(line) {
   const match = line.match(/android:name="([^"]+)"/);
   return match ? `android:name="${match[1]}"` : line.trim();
 }
 
-function main() {
-  const manifest = readFileSync(MANIFEST_PATH, 'utf8');
-
+function patchPermissions(manifest) {
   const missingLines = REQUIRED_PERMISSIONS.filter(
     (line) => !manifest.includes(extractPermissionKey(line)),
   );
 
   if (missingLines.length === 0) {
-    console.log('[patch-manifest] Tüm izinler zaten mevcut, değişiklik yapılmadı.');
-    return;
+    console.log('[patch-manifest] Tüm izinler zaten mevcut.');
+    return manifest;
   }
 
   const insertion = `${missingLines.join('\n')}\n`;
-  const patched = manifest.replace(
-    /(<manifest[^>]*>\n)/,
-    `$1${insertion}`,
-  );
+  const patched = manifest.replace(/(<manifest[^>]*>\n)/, `$1${insertion}`);
 
   if (patched === manifest) {
-    throw new Error('[patch-manifest] <manifest> etiketi bulunamadı, ekleme yapılamadı.');
+    throw new Error('[patch-manifest] <manifest> etiketi bulunamadı, izin eklenemedi.');
   }
 
-  writeFileSync(MANIFEST_PATH, patched, 'utf8');
   console.log(`[patch-manifest] ${missingLines.length} izin satırı eklendi: ${missingLines.map(extractPermissionKey).join(', ')}`);
+  return patched;
+}
+
+function patchServiceDeclaration(manifest) {
+  if (manifest.includes('SmartDriveForegroundService')) {
+    console.log('[patch-manifest] Servis kaydı zaten mevcut.');
+    return manifest;
+  }
+
+  const patched = manifest.replace(/(\s*<\/application>)/, `\n${SERVICE_DECLARATION}$1`);
+
+  if (patched === manifest) {
+    throw new Error('[patch-manifest] </application> etiketi bulunamadı, servis kaydedilemedi.');
+  }
+
+  console.log('[patch-manifest] SmartDriveForegroundService kaydedildi.');
+  return patched;
+}
+
+function main() {
+  let manifest = readFileSync(MANIFEST_PATH, 'utf8');
+  manifest = patchPermissions(manifest);
+  manifest = patchServiceDeclaration(manifest);
+  writeFileSync(MANIFEST_PATH, manifest, 'utf8');
 }
 
 main();
