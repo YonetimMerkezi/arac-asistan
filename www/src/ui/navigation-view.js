@@ -290,9 +290,9 @@ function bindPoiButtons(container) {
         if (cached.stations.length > 0) {
           renderFuelResults(cached.stations, cached.prices, cached.location, listEl, priceTableEl, statusEl);
           const ageMinutes = Math.round((Date.now() - cached.fetchedAt) / 60000);
-          if (statusEl) {
-            statusEl.textContent += ageMinutes > 0 ? ` (${ageMinutes} dk önce güncellendi)` : ' (az önce güncellendi)';
-          }
+          const ageText = ageMinutes > 0 ? `${ageMinutes} dk önce güncellendi` : 'az önce güncellendi';
+          const priceNote = cached.prices.length > 0 ? '' : ' · fiyat verisi henüz gelmedi, birazdan otomatik tekrar denenecek';
+          if (statusEl) statusEl.textContent += ` (${ageText}${priceNote})`;
           return;
         }
         // Önbellek henüz hiç dolmadıysa (ör. açılışta konum çok yeni geldi)
