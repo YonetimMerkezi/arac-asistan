@@ -285,29 +285,14 @@ function bindPoiButtons(container) {
         results = await findNearbyPoi(category, current.latitude, current.longitude, 20000);
       }
 
-      // "Yakıt" kategorisinde, konumun il/ilçesine göre GÜNCEL FİYAT
-      // LİSTESİNİ çekip her istasyonun markasıyla eşleştirmeyi dener.
-      let fuelPricesByStation = null;
-      if (category === 'fuel' && results.length > 0) {
-        const location = await reverseGeocodeIlIlce(current.latitude, current.longitude);
-        if (location) {
-          const stations = await getFuelPrices(location.il, location.ilce, current.longitude);
-          fuelPricesByStation = new Map(
-            results.map((poi) => [poi, matchStationByName(stations, poi.brand ?? poi.name)]),
-          );
-        }
-      }
-
+      // ÖNCE İŞARETÇİLERİ ÇİZ (fiyat bilgisi olmadan) - bu, aşağıdaki fiyat
+      // sorgusu yavaş/başarısız olsa bile kullanıcının istasyonları HEMEN
+      // görmesini sağlar. Fiyat sorgusu ayrı bir dış servise (Nominatim)
+      // bağımlı olduğu için burada bloklayıcı olmamalı.
       poiMarkers.forEach((m) => map.removeLayer(m));
-      poiMarkers = results.slice(0, 15).map((poi) => {
-        const price = fuelPricesByStation?.get(poi);
-        const priceLine = price
-          ? `<br>Benzin: ${price.benzin ?? '-'} ₺ · Motorin: ${price.motorin ?? '-'} ₺${price.lpg ? ` · LPG: ${price.lpg} ₺` : ''}`
-          : '';
-        return L.marker([poi.lat, poi.lon])
-          .bindPopup(`${poi.name} (${poi.distanceKm.toFixed(1)} km)${priceLine}`)
-          .addTo(map);
-      });
+      poiMarkers = results.slice(0, 15).map((poi) => L.marker([poi.lat, poi.lon])
+        .bindPopup(`${poi.name} (${poi.distanceKm.toFixed(1)} km)`)
+        .addTo(map));
 
       if (results.length > 0) {
         const bounds = L.latLngBounds(results.slice(0, 15).map((p) => [p.lat, p.lon]));
@@ -316,9 +301,42 @@ function bindPoiButtons(container) {
 
       if (statusEl) {
         statusEl.textContent = results.length > 0
-          ? `${results.length} sonuç bulundu, en yakını ${results[0].distanceKm.toFixed(1)} km. Fiyat için işaretçiye dokun.`
+          ? `${results.length} sonuç bulundu, en yakını ${results[0].distanceKm.toFixed(1)} km`
           : 'Bu bölgede OpenStreetMap üzerinde kayıtlı sonuç bulunamadı.';
+      }
+
+      // SONRA fiyatları arka planda çek ve işaretçi popup'larını GÜNCELLE -
+      // bu adım başarısız/yavaş olursa yalnızca fiyat bilgisi eksik kalır,
+      // istasyonlar zaten haritada görünüyor olur.
+      if (category === 'fuel' && results.length > 0) {
+        void enhanceFuelMarkersWithPrices(results, current, statusEl);
       }
     });
   });
+}
+
+/**
+ * Zaten çizilmiş yakıt istasyonu işaretçilerinin popup içeriğini, konumun
+ * il/ilçesine göre çekilen güncel fiyatlarla günceller. Bu fonksiyon
+ * bindPoiButtons'ın ana akışını BLOKLAMAZ - ayrı bir arka plan adımıdır.
+ * @param {import('../maps/poi-search.js').PoiResult[]} results
+ * @param {import('../core/gps-tracker.js').LivePosition} current
+ * @param {HTMLElement|null} statusEl
+ */
+async function enhanceFuelMarkersWithPrices(results, current, statusEl) {
+  const location = await reverseGeocodeIlIlce(current.latitude, current.longitude);
+  if (!location) return;
+
+  const stations = await getFuelPrices(location.il, location.ilce, current.longitude);
+  if (stations.length === 0) return;
+
+  results.slice(0, 15).forEach((poi, index) => {
+    const price = matchStationByName(stations, poi.brand ?? poi.name);
+    if (!price) return;
+
+    const priceLine = `<br>Benzin: ${price.benzin ?? '-'} ₺ · Motorin: ${price.motorin ?? '-'} ₺${price.lpg ? ` · LPG: ${price.lpg} ₺` : ''}`;
+    poiMarkers[index]?.setPopupContent(`${poi.name} (${poi.distanceKm.toFixed(1)} km)${priceLine}`);
+  });
+
+  if (statusEl) statusEl.textContent += ' · Fiyat için işaretçiye dokun.';
 }
