@@ -43,6 +43,7 @@ import { initDiagnosticsView } from '../ui/diagnostics-view.js';
 import { initAiView } from '../ui/ai-view.js';
 import { initSettingsView } from '../ui/settings-view.js';
 import { initFavoriteBrandsStore } from './favorite-brands-store.js';
+import { initFuelStationCache } from '../maps/fuel-station-cache.js';
 import { initBackgroundService } from './background-service.js';
 
 /** @type {string} Karşılama cümlesinde kullanılan sahip adı. */
@@ -87,6 +88,7 @@ async function bootstrap() {
     await initFavoritesStore();
     await initBluetoothManager();
     initGpsTracker();
+    initFuelStationCache();
     bindConnectionStatusDot();
     bindConnectionStatusToast();
     initDashboardView();
