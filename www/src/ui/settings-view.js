@@ -314,10 +314,6 @@ async function loadDeviceList(section) {
 
       const ok = await connectToDevice(address, name);
 
-      // GEÇİCİ TEŞHİS: herhangi bir DOM yeniden çizim yarışından tamamen
-      // bağımsız, kesin görünür bir sonuç. Sorun çözülünce kaldırılacak.
-      window.alert(`[Teşhis] connectToDevice("${address}") sonucu: ${ok}`);
-
       button.disabled = false;
       if (!ok && statusEl) {
         statusEl.textContent = 'Bağlantı kurulamadı. Cihazın açık ve menzilde olduğundan emin olun, tekrar deneyin.';
