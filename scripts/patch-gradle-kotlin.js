@@ -2,10 +2,11 @@
  * patch-gradle-kotlin.js
  * ---------------------------------------------------------------------------
  * `npx cap add android` Java tabanlı bir proje şablonu üretir - Kotlin
- * Gradle eklentisi VARSAYILAN OLARAK YOK. Bu yüzden BluetoothClassicPlugin.kt
- * ve MainActivity.kt dosyalarımız derlemeye hiç dahil edilmiyordu (sessizce
- * atlanıyordu, hata bile vermiyordu) - "plugin is not implemented on
- * android" çalışma zamanı hatasının kök nedeni buydu.
+ * Gradle eklentisi VARSAYILAN OLARAK YOK. Bu yüzden BluetoothClassicPlugin.kt,
+ * BackgroundServicePlugin.kt, SmartDriveForegroundService.kt ve MainActivity.kt
+ * dosyalarımız derlemeye hiç dahil edilmiyordu (sessizce atlanıyordu, hata
+ * bile vermiyordu) - "plugin is not implemented on android" çalışma zamanı
+ * hatasının kök nedeni buydu.
  *
  * Bu betik:
  *  1. Proje seviyesi build.gradle'a Kotlin Gradle eklentisini ekler
