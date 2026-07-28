@@ -60,6 +60,9 @@ jobs:
           mkdir -p android/app/src/main/java/com/sedat/smartdriveai
           cp /tmp/custom-android/smartdriveai/*.kt android/app/src/main/java/com/sedat/smartdriveai/
 
+      - name: Kotlin desteğini etkinleştir
+        run: node scripts/patch-gradle-kotlin.js
+
       - name: Uygulama ikonu / bildirim ikonu / açılış ekranını yerleştir
         run: |
           if [ -d "assets/android-res" ]; then
