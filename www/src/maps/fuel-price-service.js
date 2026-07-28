@@ -123,6 +123,17 @@ export async function getFuelPrices(il, ilce, currentLon) {
 }
 
 /**
+ * @type {Record<string, string>} Marka takma adları - iki veri kaynağı
+ * (OSM ve worker'ın fiyat listesi) aynı işletmeyi farklı adla anabiliyor.
+ * ÖZEL DURUM: BP Türkiye 2025'te Petrol Ofisi'ne devroldu; istasyon tabela
+ * dönüşümü Kasım 2026'ya kadar sürüyor - bu yüzden OSM'de hâlâ "BP" yazan
+ * çoğu istasyon artık fiyat listesinde "Petrol Ofisi" olarak görünüyor.
+ */
+const BRAND_ALIASES = {
+  bp: 'petrol ofisi',
+};
+
+/**
  * Bir istasyon/marka adına (OSM POI adı veya kullanıcı girdisi) en yakın
  * eşleşen fiyat kaydını bulur - basit, büyük/küçük harf duyarsız alt dize
  * eşleşmesi (iki veri kaynağı farklı yazım kullanabiliyor, ör. "Petrol
@@ -133,7 +144,8 @@ export async function getFuelPrices(il, ilce, currentLon) {
  */
 export function matchStationByName(stations, brandOrName) {
   if (!brandOrName) return null;
-  const needle = brandOrName.toLocaleLowerCase('tr');
+  let needle = brandOrName.toLocaleLowerCase('tr');
+  needle = BRAND_ALIASES[needle] ?? needle;
 
   return stations.find((s) => {
     const hay = s.dagitici.toLocaleLowerCase('tr');
