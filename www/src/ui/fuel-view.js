@@ -10,6 +10,9 @@ import { addFuelPurchase, listFuelPurchases } from '../data/fuel-repository.js';
 import { addMaintenanceItem, listMaintenanceItems } from '../data/maintenance-repository.js';
 import { getEstimatedOdometerKm } from '../fuel/odometer-estimator.js';
 import { renderFuelPriceChart } from '../charts/fuel-chart.js';
+import { getLastPosition } from '../core/gps-tracker.js';
+import { reverseGeocodeIlIlce } from '../maps/reverse-geocode.js';
+import { getFuelPrices } from '../maps/fuel-price-service.js';
 import { logWarn } from '../core/logger.js';
 
 /** @type {{value: string, label: string}[]} Bakım kalemi türleri (spesifikasyondaki liste). */
@@ -37,6 +40,9 @@ export function initFuelView() {
   container.innerHTML = `
     <h3 style="margin:4px 0;">Yakıt</h3>
     <form data-fuel-form class="sda-card" style="display:grid; gap:8px; margin-bottom:16px;">
+      <select name="station" data-station-select style="padding:8px;">
+        <option value="">İstasyon seç (fiyat otomatik dolsun)...</option>
+      </select>
       <input name="liters" type="number" step="0.01" placeholder="Litre" required style="padding:8px;">
       <input name="amount" type="number" step="0.01" placeholder="Tutar (₺)" required style="padding:8px;">
       <input name="odometer" type="number" step="1" placeholder="Kilometre (opsiyonel)" style="padding:8px;">
@@ -62,6 +68,48 @@ export function initFuelView() {
   bindMaintenanceForm(container);
   void renderFuelSection(container);
   void renderMaintenanceSection(container);
+  void populateStationSelect(container);
+}
+
+/**
+ * Konuma göre (GPS -> il/ilçe -> Sedat'ın Worker'ı) güncel istasyon fiyat
+ * listesini çeker ve "İstasyon seç" açılır menüsünü doldurur. Bir istasyon
+ * seçilince benzin fiyatı × litre otomatik "Tutar" alanına yazılır.
+ *
+ * NOT: Yalnızca BENZİN fiyatı kullanılır - formda şu an motorin/LPG ayrımı
+ * yok, bu yüzden dizel araç sahipleri tutarı elle düzeltmeli.
+ * @param {HTMLElement} container
+ */
+async function populateStationSelect(container) {
+  const select = container.querySelector('[data-station-select]');
+  if (!select) return;
+
+  const position = getLastPosition();
+  if (!position) return;
+
+  const location = await reverseGeocodeIlIlce(position.latitude, position.longitude);
+  if (!location) return;
+
+  const stations = await getFuelPrices(location.il, location.ilce, position.longitude);
+  const withPrice = stations.filter((s) => s.benzin !== null);
+  if (withPrice.length === 0) return;
+
+  select.innerHTML = '<option value="">İstasyon seç (fiyat otomatik dolsun)...</option>'
+    + withPrice.map((s) => `<option value="${s.benzin}">${s.dagitici} - ${s.benzin} ₺/L (benzin)</option>`).join('');
+
+  const litersInput = container.querySelector('input[name="liters"]');
+  const amountInput = container.querySelector('input[name="amount"]');
+
+  const recalcAmount = () => {
+    const pricePerLiter = parseFloat(select.value);
+    const liters = parseFloat(litersInput.value);
+    if (pricePerLiter && liters) {
+      amountInput.value = (pricePerLiter * liters).toFixed(2);
+    }
+  };
+
+  select.addEventListener('change', recalcAmount);
+  litersInput.addEventListener('input', recalcAmount);
 }
 
 /**

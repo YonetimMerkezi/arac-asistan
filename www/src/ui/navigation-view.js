@@ -20,6 +20,8 @@ import { onViewChange } from '../core/view-router.js';
 import { getDrivingRoute } from '../maps/route-service.js';
 import { findNearbyPoi } from '../maps/poi-search.js';
 import { getFavoriteLocation, setFavoriteLocation } from '../maps/favorites-store.js';
+import { reverseGeocodeIlIlce } from '../maps/reverse-geocode.js';
+import { getFuelPrices, matchStationByName } from '../maps/fuel-price-service.js';
 import { iconMarkup } from './icons.js';
 import { logWarn } from '../core/logger.js';
 
@@ -283,10 +285,29 @@ function bindPoiButtons(container) {
         results = await findNearbyPoi(category, current.latitude, current.longitude, 20000);
       }
 
+      // "Yakıt" kategorisinde, konumun il/ilçesine göre GÜNCEL FİYAT
+      // LİSTESİNİ çekip her istasyonun markasıyla eşleştirmeyi dener.
+      let fuelPricesByStation = null;
+      if (category === 'fuel' && results.length > 0) {
+        const location = await reverseGeocodeIlIlce(current.latitude, current.longitude);
+        if (location) {
+          const stations = await getFuelPrices(location.il, location.ilce, current.longitude);
+          fuelPricesByStation = new Map(
+            results.map((poi) => [poi, matchStationByName(stations, poi.brand ?? poi.name)]),
+          );
+        }
+      }
+
       poiMarkers.forEach((m) => map.removeLayer(m));
-      poiMarkers = results.slice(0, 15).map((poi) => L.marker([poi.lat, poi.lon])
-        .bindPopup(`${poi.name} (${poi.distanceKm.toFixed(1)} km)`)
-        .addTo(map));
+      poiMarkers = results.slice(0, 15).map((poi) => {
+        const price = fuelPricesByStation?.get(poi);
+        const priceLine = price
+          ? `<br>Benzin: ${price.benzin ?? '-'} ₺ · Motorin: ${price.motorin ?? '-'} ₺${price.lpg ? ` · LPG: ${price.lpg} ₺` : ''}`
+          : '';
+        return L.marker([poi.lat, poi.lon])
+          .bindPopup(`${poi.name} (${poi.distanceKm.toFixed(1)} km)${priceLine}`)
+          .addTo(map);
+      });
 
       if (results.length > 0) {
         const bounds = L.latLngBounds(results.slice(0, 15).map((p) => [p.lat, p.lon]));
@@ -295,7 +316,7 @@ function bindPoiButtons(container) {
 
       if (statusEl) {
         statusEl.textContent = results.length > 0
-          ? `${results.length} sonuç bulundu, en yakını ${results[0].distanceKm.toFixed(1)} km`
+          ? `${results.length} sonuç bulundu, en yakını ${results[0].distanceKm.toFixed(1)} km. Fiyat için işaretçiye dokun.`
           : 'Bu bölgede OpenStreetMap üzerinde kayıtlı sonuç bulunamadı.';
       }
     });
