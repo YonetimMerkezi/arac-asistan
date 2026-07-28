@@ -162,3 +162,42 @@ body {
   outline: 2px solid var(--sda-accent);
   outline-offset: 2px;
 }
+
+/**
+ * ---------------------------------------------------------------------------
+ * TEMA PAKETİ STİLLERİ ("data-style" özniteliği)
+ * ---------------------------------------------------------------------------
+ * Her paket theme-manager.js tarafından hem renk tonlarını (--sda-accent-hue)
+ * HEM de aşağıdaki [data-style="..."] bloklarından birini tetikler. Renk
+ * tonu her paketi zaten ayırt eder; buradaki kurallar yalnızca paketin
+ * KENDİNE ÖZGÜ görsel karakterini (parlama, kart kenarlığı kalınlığı gibi)
+ * ekler. Yeni bir paket eklemek theme-packages.js'e bir kayıt + (isteğe
+ * bağlı) burada birkaç kural eklemek kadar basittir.
+ */
+
+/* "neon" paketi: gösterge/kart kenarlarında hafif parlama (glow) efekti. */
+:root[data-style='neon'] .sda-card--elevated,
+:root[data-style='neon'] sda-gauge {
+  filter: drop-shadow(0 0 6px hsl(var(--sda-accent-hue) 90% 55% / 0.35));
+}
+
+:root[data-style='neon'] .sda-nav-btn[aria-current='page'] {
+  box-shadow: 0 0 12px hsl(var(--sda-accent-hue) 90% 55% / 0.5);
+}
+
+/* "gunbatimi" paketi: kartlarda hafif sıcak degrade zemin. */
+:root[data-style='gunbatimi'] .sda-card--elevated {
+  background: linear-gradient(
+    160deg,
+    var(--sda-bg-elevated) 0%,
+    hsl(var(--sda-accent-hue) 40% 14%) 100%
+  );
+}
+
+:root[data-theme='light'][data-style='gunbatimi'] .sda-card--elevated {
+  background: linear-gradient(
+    160deg,
+    var(--sda-bg-elevated) 0%,
+    hsl(var(--sda-accent-hue) 60% 96%) 100%
+  );
+}

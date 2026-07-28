@@ -6,31 +6,70 @@
  * theme.css'teki tokenlar üzerine kurulu, tema-bağımsız yapısal kurallar.
  * Buradaki hiçbir kural sabit renk/boyut değeri içermez; tamamı
  * var(--sda-*) token'larına referans verir.
+ *
+ * YATAY/DİKEY DUYARLILIK: #app-root bir CSS Grid'dir. Dikeyde (portrait)
+ * üç satır (header/main/nav) üst üste; yatayda (landscape) nav bir yan
+ * sütuna kayar. Bu DOM sırasını değiştirmez - yalnızca grid-template-areas
+ * tanımı değişir, bu yüzden index.html'deki <header>/<main>/<nav> sırası
+ * hiçbir zaman değiştirilmemelidir.
  * ---------------------------------------------------------------------------
  */
 
 #app-root {
-  display: flex;
-  flex-direction: column;
+  display: grid;
+  grid-template-areas:
+    "header"
+    "main"
+    "nav";
+  grid-template-rows: auto 1fr auto;
+  grid-template-columns: 1fr;
   height: 100dvh;
   width: 100%;
   overflow: hidden;
 }
 
-/*
- * DÜZELTME (kayma/alt menü konumlanma hatası): <main>, #app-root'un flex
- * çocuğu olarak varsayılan flex-grow:0 ile davranıyordu, bu yüzden içeriğine
- * göre büzülüyor ve alt nav gerçek ekran altına yapışmak yerine ortada kalıp
- * altında boşluk bırakıyordu. <main>'i de flex konteyner yapıp kalan tüm
- * alanı doldurmasını sağlıyoruz - .sda-view'daki flex:1/overflow-y:auto
- * artık gerçekten sınırlı bir yüksekliğe sahip olduğu için kayabiliyor.
- */
+#app-root > .sda-topbar {
+  grid-area: header;
+}
+
 #app-root > main {
-  flex: 1;
+  grid-area: main;
   min-height: 0;
+  min-width: 0;
   overflow: hidden;
   display: flex;
   flex-direction: column;
+}
+
+#app-root > .sda-bottom-nav {
+  grid-area: nav;
+}
+
+/* Yatay (landscape): nav sol yan sütuna kayar, thumb ile ulaşımı korumak
+   ve dikey alanı israf etmemek için. */
+@media (orientation: landscape) {
+  #app-root {
+    grid-template-areas:
+      "header header"
+      "nav main";
+    grid-template-columns: 84px 1fr;
+    grid-template-rows: auto 1fr;
+  }
+
+  #app-root > .sda-bottom-nav {
+    flex-direction: column;
+    justify-content: flex-start;
+    gap: var(--sda-space-2);
+    padding: var(--sda-space-3) 0;
+    border-top: none;
+    border-right: 1px solid var(--sda-hairline);
+    overflow-y: auto;
+  }
+
+  /* Dashboard/form ızgaraları yatayda daha fazla sütun kullanabilir. */
+  .sda-grid {
+    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  }
 }
 
 /* Durum çubuğu güvenli alanı (Android status bar) */
@@ -78,6 +117,7 @@
 /* --- İçerik alanı --- */
 .sda-view {
   flex: 1;
+  min-height: 0;
   overflow-y: auto;
   padding: var(--sda-space-4);
   padding-bottom: calc(var(--sda-space-6) * 2);
@@ -121,6 +161,73 @@
   gap: var(--sda-space-3);
 }
 
+/* --- Form elemanları (Faz 9'da eksik kalan; Ayarlar/Yakıt/Bakım formları
+   şimdiye kadar tarayıcı varsayılanıyla görünüyordu) --- */
+.sda-input,
+.sda-select {
+  background: var(--sda-bg-elevated);
+  border: 1px solid var(--sda-hairline);
+  border-radius: var(--sda-radius-sm);
+  color: var(--sda-text-primary);
+  font-family: var(--sda-font-body);
+  font-size: var(--sda-fs-body);
+  padding: var(--sda-space-3);
+  width: 100%;
+}
+
+.sda-input::placeholder {
+  color: var(--sda-text-faint);
+}
+
+.sda-input:focus,
+.sda-select:focus {
+  outline: none;
+  border-color: var(--sda-accent);
+}
+
+/* --- Birincil/ikincil aksiyon butonları (nav butonundan ayrı - form/ekran
+   içi aksiyonlar için, ör. "Kaydet", "Ekle") --- */
+.sda-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--sda-space-2);
+  border: none;
+  border-radius: var(--sda-radius-sm);
+  padding: var(--sda-space-3) var(--sda-space-4);
+  font-family: var(--sda-font-body);
+  font-weight: 600;
+  font-size: var(--sda-fs-body);
+  cursor: pointer;
+  transition: transform var(--sda-motion-fast) var(--sda-motion-ease),
+              opacity var(--sda-motion-fast) var(--sda-motion-ease);
+}
+
+.sda-btn:active {
+  transform: scale(0.98);
+}
+
+.sda-btn--primary {
+  background: var(--sda-accent);
+  color: var(--sda-bg-base);
+}
+
+.sda-btn--secondary {
+  background: var(--sda-accent-soft);
+  color: var(--sda-accent);
+}
+
+.sda-btn--danger {
+  background: var(--sda-danger-soft);
+  color: var(--sda-danger);
+}
+
+.sda-btn--ghost {
+  background: none;
+  color: var(--sda-accent);
+  padding: var(--sda-space-2);
+}
+
 /* --- Alt gezinme çubuğu --- */
 .sda-bottom-nav {
   display: flex;
@@ -129,8 +236,6 @@
   background: var(--sda-bg-surface);
   border-top: 1px solid var(--sda-hairline);
   padding: var(--sda-space-2) 0;
-  position: sticky;
-  bottom: 0;
 }
 
 .sda-nav-btn {
@@ -176,4 +281,52 @@
   font-weight: 600;
   color: var(--sda-text-primary);
   font-size: var(--sda-fs-body);
+}
+
+/* --- Widget düzenleme modu (Panel özelleştirme) --- */
+.sda-widget-card {
+  position: relative;
+}
+
+.sda-widget-card__controls {
+  display: flex;
+  gap: var(--sda-space-2);
+  margin-top: var(--sda-space-2);
+}
+
+.sda-widget-card__controls button {
+  background: var(--sda-bg-elevated-hover);
+  border: 1px solid var(--sda-hairline);
+  color: var(--sda-text-primary);
+  border-radius: var(--sda-radius-sm);
+  padding: 4px 10px;
+  font-size: 0.75rem;
+}
+
+.sda-color-swatch {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  border: 2px solid transparent;
+  display: inline-block;
+}
+
+.sda-color-swatch[aria-current='true'] {
+  border-color: var(--sda-text-primary);
+}
+
+/* --- Simge sistemi (icons.js) --- */
+.material-symbols-outlined {
+  font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+  vertical-align: middle;
+  line-height: 1;
+}
+
+.sda-icon {
+  display: inline-flex;
+  color: currentColor;
+}
+
+.sda-nav-btn .sda-icon {
+  font-size: 22px !important;
 }
