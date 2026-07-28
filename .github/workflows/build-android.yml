@@ -64,6 +64,14 @@ jobs:
         run: |
           if [ -d "assets/android-res" ]; then
             cp -r assets/android-res/* android/app/src/main/res/
+            # GitHub'ın web yükleme ekranı boş klasör kabul etmediği için
+            # klasör oluşturmak amacıyla bırakılan yer tutucu dosyaları
+            # (ör. "X") temizle - Android kaynak birleştirici yalnızca
+            # .xml/.png/.jpg/.jpeg/.webp uzantılarını kabul eder, başka
+            # herhangi bir dosya (boş bile olsa) build'i kırar.
+            find android/app/src/main/res -type f \
+              ! -name "*.xml" ! -name "*.png" ! -name "*.jpg" ! -name "*.jpeg" ! -name "*.webp" \
+              -print -delete
             echo "Özel ikon/açılış ekranı kaynakları kopyalandı."
           else
             echo "assets/android-res bulunamadı, Capacitor'ün varsayılan ikonu kullanılacak."
