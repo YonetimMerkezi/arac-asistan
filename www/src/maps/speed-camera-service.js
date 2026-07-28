@@ -10,7 +10,7 @@
  * ---------------------------------------------------------------------------
  */
 
-import { runOverpassQuery, buildRadiusNodeQuery } from './overpass-client.js';
+import { queryNearbyTaggedNodes } from './overpass-client.js';
 import { onPosition } from '../core/gps-tracker.js';
 import { haversineDistanceKm } from '../trip/geo-utils.js';
 import { speak } from '../voice/tts.js';
@@ -79,8 +79,7 @@ async function handlePosition(position) {
 async function refreshCameras(lat, lon) {
   lastRefreshLocation = { lat, lon };
 
-  const query = buildRadiusNodeQuery(lat, lon, SEARCH_RADIUS_METERS, '"highway"="speed_camera"');
-  const elements = await runOverpassQuery(query);
+  const elements = await queryNearbyTaggedNodes(lat, lon, SEARCH_RADIUS_METERS, 'highway', 'speed_camera');
 
   cachedCameras = elements
     .filter((el) => typeof el.lat === 'number' && typeof el.lon === 'number')

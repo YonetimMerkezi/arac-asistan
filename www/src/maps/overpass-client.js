@@ -34,6 +34,50 @@ const OVERPASS_ENDPOINTS = [
 const REQUEST_TIMEOUT_MS = 8000;
 
 /**
+ * @type {string} Sedat'ın POI proxy worker adresi. Boş bırakılırsa (henüz
+ * deploy edilmediyse) doğrudan Overpass aynalarına düşülür.
+ */
+const POI_WORKER_ENDPOINT = 'https://istasyon.sedonet23.workers.dev/';
+
+/**
+ * Bir merkez nokta etrafında belirli bir etikete sahip node'ları getirir.
+ * ÖNCE Sedat'ın Cloudflare Worker'ını dener (telefon ağından doğrudan
+ * Overpass'a erişimin bazı ağlarda başarısız olduğu gözlemlendi - worker
+ * isteği Cloudflare'in sunucusundan yaparak bunu atlar). Worker
+ * başarısız olursa (henüz deploy edilmemiş, kendi hatası vb.) doğrudan
+ * Overpass aynalarına düşer.
+ * @param {number} lat
+ * @param {number} lon
+ * @param {number} radiusMeters
+ * @param {string} tagKey - ör. "amenity"
+ * @param {string} tagValue - ör. "fuel"
+ * @returns {Promise<Array<{id:number, lat:number, lon:number, name:string|null, brand:string|null}>>}
+ */
+export async function queryNearbyTaggedNodes(lat, lon, radiusMeters, tagKey, tagValue) {
+  try {
+    const url = `${POI_WORKER_ENDPOINT}?lat=${lat}&lon=${lon}&radius=${radiusMeters}&tag=${tagKey}=${tagValue}`;
+    const response = await fetch(url);
+    if (response.ok) {
+      const data = await response.json();
+      if (data.success) return data.elements ?? [];
+    }
+    logWarn('overpass-client', 'POI worker başarısız, doğrudan Overpass aynalarına düşülüyor');
+  } catch (error) {
+    logWarn('overpass-client', 'POI worker\'a ulaşılamadı, doğrudan Overpass aynalarına düşülüyor', error);
+  }
+
+  // Yedek: worker yoksa/başarısızsa doğrudan Overpass aynalarını dene.
+  const elements = await runOverpassQuery(buildRadiusNodeQuery(lat, lon, radiusMeters, `"${tagKey}"="${tagValue}"`));
+  return elements.map((el) => ({
+    id: el.id,
+    lat: el.lat,
+    lon: el.lon,
+    name: el.tags?.name ?? null,
+    brand: el.tags?.brand ?? null,
+  }));
+}
+
+/**
  * Verilen Overpass QL sorgusunu çalıştırır - birincil sunucu başarısız
  * olursa (zaman aşımı, 5xx, ağ hatası) sırayla yedek aynaları dener.
  * @param {string} query - Overpass QL gövdesi (örn. "[out:json];node(...);out;").

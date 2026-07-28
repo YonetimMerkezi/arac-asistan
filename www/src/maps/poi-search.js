@@ -9,17 +9,17 @@
  * ---------------------------------------------------------------------------
  */
 
-import { runOverpassQuery, buildRadiusNodeQuery } from './overpass-client.js';
+import { queryNearbyTaggedNodes } from './overpass-client.js';
 import { haversineDistanceKm } from '../trip/geo-utils.js';
 
 /** @typedef {'parking'|'fuel'|'service'|'hospital'} PoiCategory */
 
-/** @type {Record<PoiCategory, string>} Kategori -> Overpass etiket filtresi. */
+/** @type {Record<PoiCategory, [string, string]>} Kategori -> [Overpass etiket anahtarı, değeri]. */
 const CATEGORY_TAGS = {
-  parking: '"amenity"="parking"',
-  fuel: '"amenity"="fuel"',
-  service: '"shop"="car_repair"',
-  hospital: '"amenity"="hospital"',
+  parking: ['amenity', 'parking'],
+  fuel: ['amenity', 'fuel'],
+  service: ['shop', 'car_repair'],
+  hospital: ['amenity', 'hospital'],
 };
 
 /**
@@ -42,16 +42,17 @@ const CATEGORY_TAGS = {
  * @returns {Promise<PoiResult[]>}
  */
 export async function findNearbyPoi(category, lat, lon, radiusMeters = 5000) {
-  const tagFilter = CATEGORY_TAGS[category];
-  if (!tagFilter) return [];
+  const tagPair = CATEGORY_TAGS[category];
+  if (!tagPair) return [];
+  const [tagKey, tagValue] = tagPair;
 
-  const elements = await runOverpassQuery(buildRadiusNodeQuery(lat, lon, radiusMeters, tagFilter));
+  const elements = await queryNearbyTaggedNodes(lat, lon, radiusMeters, tagKey, tagValue);
 
   return elements
     .filter((el) => typeof el.lat === 'number' && typeof el.lon === 'number')
     .map((el) => ({
-      name: el.tags?.name ?? defaultNameFor(category),
-      brand: el.tags?.brand ?? null,
+      name: el.name ?? defaultNameFor(category),
+      brand: el.brand ?? null,
       lat: el.lat,
       lon: el.lon,
       distanceKm: haversineDistanceKm(lat, lon, el.lat, el.lon),
