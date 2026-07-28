@@ -124,6 +124,12 @@ async function refresh(lat, lon) {
 
     logInfo('fuel-station-cache', `Önbellek tazelendi: ${stations.length} istasyon, ${prices.length} fiyat kaydı`);
     for (const listener of listeners) listener(getFuelStationCache());
+
+    // İstasyonlar bulundu ama fiyat verisi boş geldiyse (ör. geçici bir ağ
+    // aksaklığı), 15 dakika beklemeden kısa süre sonra bir kez daha dene.
+    if (stations.length > 0 && prices.length === 0) {
+      setTimeout(() => void refresh(lat, lon), 30 * 1000);
+    }
   } catch (error) {
     logWarn('fuel-station-cache', 'Önbellek tazeleme başarısız', error);
   } finally {
