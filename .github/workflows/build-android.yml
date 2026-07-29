@@ -54,6 +54,21 @@ jobs:
           mkdir -p ~/.android
           echo "${{ secrets.DEBUG_KEYSTORE_BASE64 }}" | base64 -d > ~/.android/debug.keystore
 
+          # DOĞRULAMA: secret'ın gerçekten okunup okunmadığını VE anahtarın
+          # her build'de AYNI olup olmadığını (parmak izi üzerinden) log'da
+          # açıkça görünür kılar - "imzalama sorunu hâlâ var mı" sorusunu
+          # tahmine değil, doğrudan log çıktısına dayandırır.
+          FILE_SIZE=$(stat -c%s ~/.android/debug.keystore 2>/dev/null || stat -f%z ~/.android/debug.keystore)
+          echo "Keystore dosya boyutu: ${FILE_SIZE} bayt (boşsa/çok küçükse secret YANLIŞ okunmuş demektir)"
+
+          if [ "$FILE_SIZE" -lt 100 ]; then
+            echo "::error::DEBUG_KEYSTORE_BASE64 secret'ı boş veya hatalı görünüyor (dosya çok küçük). GitHub Settings > Secrets kısmını kontrol edin."
+            exit 1
+          fi
+
+          echo "Keystore SHA256 parmak izi (HER BUILD'DE AYNI olmalı):"
+          keytool -list -v -keystore ~/.android/debug.keystore -storepass android 2>/dev/null | grep "SHA256:" || echo "UYARI: parmak izi okunamadı - keystore bozuk olabilir."
+
       - name: Bağımlılıkları yükle
         run: npm install --legacy-peer-deps
 
