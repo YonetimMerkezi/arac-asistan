@@ -45,6 +45,17 @@ const SERVICE_DECLARATION = `        <service
             android:foregroundServiceType="connectedDevice" />
 `;
 
+/** @type {string[]} AppLauncherPlugin'in "yüklü mü" kontrolü/başlatma yapabilmesi için
+ * görünür olması gereken paket adları (bkz. core/app-launcher.js - aynı liste). */
+const QUERIES_PACKAGES = [
+  'com.spotify.music',
+  'com.google.android.apps.youtube.music',
+  'com.turkcell.gncplay',
+  'com.turktelekom.muud',
+  'deezer.android.app',
+  'com.apple.android.music',
+];
+
 /**
  * Bir izin satırından gerçek izin adını (android:name="...") çıkarır.
  * @param {string} line
@@ -92,10 +103,39 @@ function patchServiceDeclaration(manifest) {
   return patched;
 }
 
+/**
+ * Android 11+ (API 30+) paket görünürlüğü için <queries> bloğunu ekler -
+ * bu olmadan AppLauncherPlugin.kt başka hiçbir uygulamayı (müzik uygulamaları
+ * dahil) "yüklü mü" diye göremez veya başlatamaz.
+ * @param {string} manifest
+ * @returns {string}
+ */
+function patchQueries(manifest) {
+  if (manifest.includes('<queries>')) {
+    console.log('[patch-manifest] <queries> bloğu zaten mevcut.');
+    return manifest;
+  }
+
+  const packageLines = QUERIES_PACKAGES
+    .map((pkg) => `        <package android:name="${pkg}" />`)
+    .join('\n');
+  const block = `    <queries>\n${packageLines}\n    </queries>\n`;
+
+  const patched = manifest.replace(/(<manifest[^>]*>\n)/, `$1${block}`);
+
+  if (patched === manifest) {
+    throw new Error('[patch-manifest] <manifest> etiketi bulunamadı, <queries> eklenemedi.');
+  }
+
+  console.log(`[patch-manifest] <queries> bloğu eklendi (${QUERIES_PACKAGES.length} paket).`);
+  return patched;
+}
+
 function main() {
   let manifest = readFileSync(MANIFEST_PATH, 'utf8');
   manifest = patchPermissions(manifest);
   manifest = patchServiceDeclaration(manifest);
+  manifest = patchQueries(manifest);
   writeFileSync(MANIFEST_PATH, manifest, 'utf8');
 }
 
