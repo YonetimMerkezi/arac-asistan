@@ -16,8 +16,7 @@ import { iconMarkup } from './icons.js';
 import { getUnits, setUnits } from '../core/units-store.js';
 import { isMuted, setMuted } from '../voice/tts.js';
 import {
-  listPairedDevices,
-  connectToDevice,
+  scanAndConnectElm,
   disconnect as disconnectBluetooth,
   getState as getBluetoothState,
   onStateChange as onBluetoothStateChange,
@@ -30,6 +29,7 @@ import {
 } from '../core/background-service.js';
 import { createCorridor, listCorridors, deleteCorridor } from '../data/corridor-repository.js';
 import { refreshCorridors } from '../maps/average-speed-corridor.js';
+import { openDiagnosticsLogModal } from './diagnostics-log-view.js';
 import { logWarn } from '../core/logger.js';
 
 /**
@@ -99,6 +99,9 @@ function render(container) {
 
     <h3 style="margin:4px 0;">Araç Bağlantısı</h3>
     <div data-device-section style="margin-bottom:16px;"></div>
+    <button type="button" data-open-log class="sda-btn sda-btn--ghost" style="margin-bottom:16px;">
+      ${iconMarkup('info', { size: 18 })} Bağlantı Günlüğü
+    </button>
 
     <h3 style="margin:4px 0;">Arka Planda Çalışma</h3>
     <div class="sda-card" style="margin-bottom:16px;">
@@ -126,6 +129,7 @@ function render(container) {
   bindUnitButtons(container, units);
   bindSoundToggle(container, muted);
   renderDeviceSection(container);
+  container.querySelector('[data-open-log]')?.addEventListener('click', openDiagnosticsLogModal);
   bindBackgroundServiceToggle(container);
   bindCorridorForm(container);
   void renderCorridorList(container);
@@ -259,66 +263,47 @@ function renderDeviceSection(container) {
     return;
   }
 
-  // KRİTİK MİMARİ NOT: connecting/reconnecting/disconnected durumlarının
-  // HEPSİ aynı, KALICI liste yapısını kullanır. Liste yalnızca BİR KEZ
-  // (ilk çağrıda) inşa edilir - her durum değişikliğinde section.innerHTML
-  // baştan yazılmaz. Önceki sürümde her durum değişikliği (connecting dahil)
-  // tüm listeyi yok edip yeniden çekiyordu; bu da tıklama sonrası gösterilen
-  // "bağlanılıyor"/"bağlanamadı" mesajının ait olduğu DOM düğümünün
-  // ortadan kaldırılmasına, dolayısıyla mesajın hiç görünmemesine
-  // ("titreme" olarak algılanan art arda yeniden çizim) sebep oluyordu.
-  if (!section.querySelector('[data-device-list-root]')) {
+  // KRİTİK: Önceki sürüm burada TÜM eşleştirilmiş Bluetooth cihazlarını
+  // (kulaklık, hoparlör, diğer telefonlar vb.) listeleyip kullanıcının
+  // aralarından OBD adaptörünü kendisinin bulmasını bekliyordu - kalabalık
+  // ve kafa karıştırıcıydı. Artık Car Scanner benzeri TEK DÜĞME: kullanıcı
+  // hiçbir cihaz listesi görmez, "Bağlan" dokunuşu bluetooth-manager.js'teki
+  // scanAndConnectElm() ile eşleştirilmiş cihazlar arasından ELM327/OBD2
+  // adaptörünü kendisi bulup doğrudan bağlanır.
+  if (!section.querySelector('[data-connect-elm]')) {
     section.innerHTML = `
-      <div data-device-list-root>
-        <p class="sda-card__label">Cihazlar taranıyor...</p>
-      </div>
+      <button type="button" data-connect-elm class="sda-btn sda-btn--primary" style="width:100%;">
+        ${iconMarkup('bluetooth', { size: 20 })} Bağlan
+      </button>
       <p data-connect-status class="sda-card__label" style="margin-top:8px;"></p>
     `;
-    void loadDeviceList(section);
+    bindConnectElmButton(section);
   }
 
   updateConnectStatusLine(section, state);
 }
 
 /**
- * Eşleştirilmiş cihaz listesini BİR KEZ yükler ve tıklama olaylarını bağlar.
- * Sonraki durum değişikliklerinde bu liste yeniden inşa EDİLMEZ.
+ * "Bağlan" düğmesini bağlar - eşleştirilmiş cihaz listesini hiç göstermeden
+ * doğrudan ELM327/OBD2 adaptörünü bulup bağlanmayı dener.
  * @param {HTMLElement} section
  */
-async function loadDeviceList(section) {
-  const listRoot = section.querySelector('[data-device-list-root]');
-  if (!listRoot) return;
+function bindConnectElmButton(section) {
+  const button = section.querySelector('[data-connect-elm]');
+  const statusEl = section.querySelector('[data-connect-status]');
 
-  const devices = await listPairedDevices();
+  button?.addEventListener('click', async () => {
+    button.disabled = true;
+    if (statusEl) statusEl.textContent = 'ELM327/OBD2 adaptörü aranıyor...';
 
-  if (devices.length === 0) {
-    listRoot.innerHTML = '<p class="sda-card__label">Eşleştirilmiş cihaz yok. Önce Android Bluetooth ayarlarından ELM327 adaptörünü eşleştirin.</p>';
-    return;
-  }
+    const result = await scanAndConnectElm();
 
-  listRoot.innerHTML = devices.map((d) => `
-    <button type="button" data-connect="${d.address}" data-name="${d.name ?? ''}" class="sda-card" style="display:block; width:100%; text-align:left; margin-bottom:8px; border:none;">
-      <p class="sda-card__value" style="font-size:1rem;">${d.name ?? 'İsimsiz cihaz'}</p>
-      <p class="sda-card__label">${d.address}</p>
-    </button>
-  `).join('');
-
-  listRoot.querySelectorAll('[data-connect]').forEach((button) => {
-    button.addEventListener('click', async () => {
-      const address = button.getAttribute('data-connect');
-      const name = button.getAttribute('data-name');
-      const statusEl = section.querySelector('[data-connect-status]');
-
-      button.disabled = true;
-      if (statusEl) statusEl.textContent = `${name || address} cihazına bağlanılıyor...`;
-
-      const ok = await connectToDevice(address, name);
-
-      button.disabled = false;
-      if (!ok && statusEl) {
-        statusEl.textContent = 'Bağlantı kurulamadı. Cihazın açık ve menzilde olduğundan emin olun, tekrar deneyin.';
-      }
-    });
+    button.disabled = false;
+    if (!result.ok && statusEl) {
+      statusEl.textContent = result.reason === 'not_found'
+        ? 'Eşleştirilmiş cihazlar arasında bir OBD adaptörü bulunamadı. Önce Android Bluetooth ayarlarından ELM327 adaptörünü eşleştirin.'
+        : 'Bağlantı kurulamadı. Adaptörün açık ve menzilde olduğundan emin olup tekrar deneyin.';
+    }
   });
 }
 
