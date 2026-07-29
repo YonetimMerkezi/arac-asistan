@@ -14,6 +14,9 @@
 /** @type {HTMLElement|null} Şu an açık olan modal köküdür (aynı anda tek modal). */
 let activeOverlay = null;
 
+/** @type {HTMLElement|null} Açık modalın gövde (sheet) elemanı - kapanış olayını burada yayınlarız. */
+let activeSheet = null;
+
 /**
  * Bir modal/alt-sayfa açar. Halihazırda açık bir modal varsa önce onu kapatır.
  * @param {Object} options
@@ -56,6 +59,7 @@ export function openModal({ title, bodyHtml, onMount }) {
   overlay.appendChild(sheet);
   document.body.appendChild(overlay);
   activeOverlay = overlay;
+  activeSheet = sheet;
 
   overlay.addEventListener('click', (event) => {
     if (event.target === overlay) closeModal();
@@ -70,10 +74,17 @@ export function openModal({ title, bodyHtml, onMount }) {
 
 /**
  * Açık modalı (varsa) kapatır. Zaten kapalıysa sessizce hiçbir şey yapmaz.
+ * Kapanmadan hemen önce gövde (sheet) elemanında `sda-modal-closed` özel
+ * olayını yayınlar - modal içeriği bir abonelik (ör. canlı günlük akışı)
+ * başlattıysa bu olayı dinleyip temizlik yapabilir (bellek sızıntısı önleme).
  */
 export function closeModal() {
+  if (activeSheet) {
+    activeSheet.dispatchEvent(new CustomEvent('sda-modal-closed'));
+  }
   if (activeOverlay) {
     activeOverlay.remove();
     activeOverlay = null;
+    activeSheet = null;
   }
 }
