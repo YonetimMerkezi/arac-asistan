@@ -75,9 +75,7 @@ export async function ensureGpsTracking() {
 
   try {
     const permission = await Geolocation.requestPermissions();
-    // GEÇİCİ TEŞHİS: masaüstü konsolu olmadığı için izin sonucunu doğrudan
-    // ekranda gösteriyoruz. Sorun çözülünce bu alert() satırı kaldırılmalı.
-    window.alert(`[Teşhis] Geolocation.requestPermissions() sonucu: ${JSON.stringify(permission)}`);
+    logInfo('gps-tracker', 'Konum izni sonucu', permission);
 
     const granted = permission.location === 'granted' || permission.coarseLocation === 'granted';
     if (!granted) {
@@ -100,7 +98,6 @@ export async function ensureGpsTracking() {
     return true;
   } catch (error) {
     logError('gps-tracker', 'GPS izleme başlatılamadı', error);
-    window.alert(`[Teşhis] Konum izleme hata verdi: ${error?.message ?? error}`);
     return false;
   }
 }
