@@ -12,6 +12,7 @@ import { getEstimatedOdometerKm } from '../fuel/odometer-estimator.js';
 import { renderFuelPriceChart } from '../charts/fuel-chart.js';
 import { getFuelStationCache, onFuelStationCacheUpdate } from '../maps/fuel-station-cache.js';
 import { consumePendingFuelSelection } from '../core/pending-fuel-selection.js';
+import { openFuelRegionPicker } from './fuel-region-view.js';
 import { logWarn } from '../core/logger.js';
 
 /** @type {{value: string, label: string}[]} Bakım kalemi türleri (spesifikasyondaki liste). */
@@ -38,6 +39,9 @@ export function initFuelView() {
 
   container.innerHTML = `
     <h3 style="margin:4px 0;">Yakıt</h3>
+    <button type="button" data-open-region-picker class="sda-btn sda-btn--secondary" style="width:100%; margin-bottom:12px;">
+      📍 İl/İlçe Seç - Başka Bölgenin Fiyatlarını Gör
+    </button>
     <form data-fuel-form class="sda-card" style="display:grid; gap:8px; margin-bottom:16px;">
       <select name="station" data-station-select style="padding:8px;">
         <option value="">İstasyon seç (fiyat otomatik dolsun)...</option>
@@ -85,6 +89,7 @@ export function initFuelView() {
  */
 function populateStationSelect(container) {
   const select = container.querySelector('[data-station-select]');
+  container.querySelector('[data-open-region-picker]')?.addEventListener('click', openFuelRegionPicker);
   const fuelTypeSelect = container.querySelector('[data-fuel-type-select]');
   if (!select) return;
 

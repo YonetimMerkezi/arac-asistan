@@ -28,8 +28,10 @@ import { findNearbyPoi } from '../maps/poi-search.js';
 import { getFavoriteLocation, setFavoriteLocation } from '../maps/favorites-store.js';
 import { reverseGeocodeIlIlce } from '../maps/reverse-geocode.js';
 import { getFuelPrices } from '../maps/fuel-price-service.js';
+import { estimateAverageConsumption, estimateFuelCost } from '../fuel/route-cost-estimator.js';
 import { getFuelStationCache, onFuelStationCacheUpdate } from '../maps/fuel-station-cache.js';
 import { renderFuelPanel, clearFuelPanel } from './navigation-fuel-panel.js';
+import { mountGpsDetailCard } from './components/gps-detail-card.js';
 import { iconMarkup } from './icons.js';
 import { logWarn } from '../core/logger.js';
 
@@ -79,18 +81,18 @@ export function initNavigationView() {
   }
 
   container.innerHTML = `
-    <div style="display:flex; gap:8px; margin-bottom:8px; flex-wrap:wrap;">
-      <button type="button" data-quick="home" class="sda-nav-btn" style="background:var(--sda-accent-soft); flex-direction:row; gap:4px;">${iconMarkup('home', { size: 16 })}<span>Eve Git</span></button>
-      <button type="button" data-quick="work" class="sda-nav-btn" style="background:var(--sda-accent-soft); flex-direction:row; gap:4px;">${iconMarkup('work', { size: 16 })}<span>İşe Git</span></button>
-      <button type="button" data-locate class="sda-nav-btn" style="background:var(--sda-bg-elevated); flex-direction:row; gap:4px;">${iconMarkup('location', { size: 16 })}<span>Konumumu Bul</span></button>
+    <div style="display:grid; grid-template-columns:repeat(3, 1fr); gap:8px; margin-bottom:8px;">
+      <button type="button" data-quick="home" class="sda-nav-btn" style="background:var(--sda-accent-soft); flex-direction:row; gap:4px; justify-content:center;">${iconMarkup('home', { size: 16 })}<span>Eve Git</span></button>
+      <button type="button" data-quick="work" class="sda-nav-btn" style="background:var(--sda-accent-soft); flex-direction:row; gap:4px; justify-content:center;">${iconMarkup('work', { size: 16 })}<span>İşe Git</span></button>
+      <button type="button" data-locate class="sda-nav-btn" style="background:var(--sda-bg-elevated); flex-direction:row; gap:4px; justify-content:center;">${iconMarkup('location', { size: 16 })}<span>Konumum</span></button>
     </div>
-    <div style="display:flex; gap:8px; margin-bottom:8px; flex-wrap:wrap;">
-      <button type="button" data-set-favorite="home" class="sda-nav-btn" style="background:var(--sda-bg-elevated); font-size:0.65rem;">Evi Ayarla</button>
-      <button type="button" data-set-favorite="work" class="sda-nav-btn" style="background:var(--sda-bg-elevated); font-size:0.65rem;">İşi Ayarla</button>
+    <div style="display:grid; grid-template-columns:repeat(2, 1fr); gap:8px; margin-bottom:8px;">
+      <button type="button" data-set-favorite="home" class="sda-nav-btn" style="background:var(--sda-bg-elevated); font-size:0.65rem; justify-content:center;">Evi Ayarla</button>
+      <button type="button" data-set-favorite="work" class="sda-nav-btn" style="background:var(--sda-bg-elevated); font-size:0.65rem; justify-content:center;">İşi Ayarla</button>
     </div>
-    <div style="display:flex; gap:8px; margin-bottom:8px; flex-wrap:wrap;">
+    <div style="display:grid; grid-template-columns:repeat(2, 1fr); gap:8px; margin-bottom:8px;">
       ${Object.entries(CATEGORY_VISUALS).map(([category, visual]) => `
-        <button type="button" data-poi="${category}" class="sda-category-btn" style="background:${visual.color};">
+        <button type="button" data-poi="${category}" class="sda-category-btn" style="background:${visual.color}; justify-content:center;">
           ${iconMarkup(visual.icon, { size: 16 })}<span>${categoryLabel(category)}</span>
         </button>
       `).join('')}
@@ -98,6 +100,7 @@ export function initNavigationView() {
     <div data-brand-filter style="display:flex; gap:6px; overflow-x:auto; margin-bottom:8px; padding-bottom:2px;"></div>
     <div data-map style="height: 48vh; border-radius: var(--sda-radius-md); overflow:hidden;"></div>
     <p data-status class="sda-card__label" style="margin-top:8px;"></p>
+    <div data-gps-detail style="margin-top:8px;"></div>
     <div data-poi-list style="margin-top:8px;"></div>
     <div data-price-table style="margin-top:16px;"></div>
   `;
@@ -120,6 +123,9 @@ export function initNavigationView() {
   bindLocateButton(container);
   bindPoiButtons(container);
   bindMapClickForFavoriteSelection(container);
+
+  const gpsDetailContainer = container.querySelector('[data-gps-detail]');
+  if (gpsDetailContainer) mountGpsDetailCard(gpsDetailContainer);
 
   // KRİTİK: Bu harita, uygulama açılışında (Panel varsayılan sekme olduğu
   // için Harita o an GİZLİ/hidden durumdayken) oluşturuluyor. Leaflet,
@@ -287,6 +293,36 @@ async function drawRouteTo(destination, container) {
 
   if (statusEl) {
     statusEl.textContent = `${destination.label}: ${route.distanceKm.toFixed(1)} km, ~${Math.round(route.durationMinutes)} dk`;
+  }
+
+  void appendRouteFuelCost(statusEl, current, route.distanceKm);
+}
+
+/**
+ * Rota mesafesine göre yaklaşık yakıt maliyetini hesaplayıp durum satırına
+ * ekler - hesaplama bittiğinde eklenir (rota anında görünsün, maliyet
+ * hesaplaması ağ isteği gerektirdiği için biraz gecikebilir).
+ * @param {HTMLElement|null} statusEl
+ * @param {import('../core/gps-tracker.js').LivePosition} current
+ * @param {number} distanceKm
+ */
+async function appendRouteFuelCost(statusEl, current, distanceKm) {
+  try {
+    const location = await reverseGeocodeIlIlce(current.latitude, current.longitude);
+    if (!location) return;
+
+    const prices = await getFuelPrices(location.il, location.ilce, current.longitude);
+    const withPrice = prices.find((p) => p.benzin !== null);
+    if (!withPrice) return;
+
+    const litersPer100Km = await estimateAverageConsumption();
+    const { liters, cost } = estimateFuelCost(distanceKm, litersPer100Km, withPrice.benzin);
+
+    if (statusEl) {
+      statusEl.textContent += ` · ~${liters.toFixed(1)} L, ~${cost.toFixed(0)} ₺ (yakıt tahmini)`;
+    }
+  } catch (error) {
+    logWarn('navigation-view', 'Rota yakıt maliyeti hesaplanamadı', error);
   }
 }
 

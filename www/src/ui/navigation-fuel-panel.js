@@ -290,7 +290,7 @@ function renderModalPriceList(listEl, prices, highlightBrand) {
     <div class="sda-card" style="display:flex; align-items:center; gap:10px; margin-bottom:6px;
       ${sameBrand(s.dagitici, highlightBrand) ? 'border-color:' + brandColor(s.dagitici) + '; border-width:2px;' : ''}">
       ${brandBadgeMarkup(s.dagitici, { size: 30 })}
-      <span class="sda-card__value" style="flex:1; font-size:0.9rem;">${s.dagitici}</span>
+      <span class="sda-card__value" style="flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-size:0.9rem;">${s.dagitici}</span>
       <span class="sda-card__label" style="text-align:right;">Benzin ${s.benzin ?? '-'} ₺<br>Motorin ${s.motorin ?? '-'} ₺</span>
     </div>
   `).join('');
@@ -316,7 +316,7 @@ function startRefuel(brand) {
  * @param {import('../maps/fuel-price-service.js').FuelStationPrice[]} stations
  * @param {{il: string, ilce: string}} location
  */
-function renderRegionPriceTable(priceTableEl, stations, location) {
+export function renderRegionPriceTable(priceTableEl, stations, location) {
   const favorites = stations.filter((s) => isFavoriteBrand(s.dagitici))
     .sort((a, b) => a.dagitici.localeCompare(b.dagitici, 'tr'));
   const others = stations.filter((s) => !isFavoriteBrand(s.dagitici))
@@ -329,11 +329,11 @@ function renderRegionPriceTable(priceTableEl, stations, location) {
       <div class="sda-card sda-card--elevated" style="margin-bottom:10px;">
         <div style="display:flex; align-items:center; gap:10px; margin-bottom:10px;">
           ${brandBadgeMarkup(s.dagitici, { size: 36 })}
-          <span class="sda-card__value" style="flex:1; font-size:1rem;">${s.dagitici}</span>
-          <button type="button" data-fav-brand="${s.dagitici}" style="background:none; border:none; font-size:1.2rem; padding:0;" aria-label="Favori">
+          <span class="sda-card__value" style="flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-size:1rem;">${s.dagitici}</span>
+          <button type="button" data-fav-brand="${s.dagitici}" style="background:none; border:none; font-size:1.2rem; padding:0; flex-shrink:0;" aria-label="Favori">
             ${isFavoriteBrand(s.dagitici) ? '⭐' : '☆'}
           </button>
-          <button type="button" data-refuel-brand="${s.dagitici}" class="sda-btn sda-btn--secondary" style="padding:6px 10px;" aria-label="Yakıt Al">
+          <button type="button" data-refuel-brand="${s.dagitici}" class="sda-btn sda-btn--secondary" style="padding:6px 10px; flex-shrink:0;" aria-label="Yakıt Al">
             ${iconMarkup('fuel', { size: 18 })}
           </button>
         </div>
