@@ -10,7 +10,8 @@ import { addFuelPurchase, listFuelPurchases } from '../data/fuel-repository.js';
 import { addMaintenanceItem, listMaintenanceItems } from '../data/maintenance-repository.js';
 import { getEstimatedOdometerKm } from '../fuel/odometer-estimator.js';
 import { renderFuelPriceChart } from '../charts/fuel-chart.js';
-import { getFuelStationCache, onFuelStationCacheUpdate } from '../maps/fuel-station-cache.js';
+import { getFuelStationCache, onFuelStationCacheUpdate, forceRefreshFuelStationCache } from '../maps/fuel-station-cache.js';
+import { registerRefreshHandler } from '../core/refresh-registry.js';
 import { consumePendingFuelSelection } from '../core/pending-fuel-selection.js';
 import { openFuelRegionPicker } from './fuel-region-view.js';
 import { logWarn } from '../core/logger.js';
@@ -75,6 +76,13 @@ export function initFuelView() {
   bindFuelForm(container);
   bindMaintenanceForm(container);
   void renderFuelSection(container);
+
+  // "Kaydırarak yenile" - istasyon/fiyat önbelleğini tazeler VE yakıt
+  // kayıt listesi/grafiğini yeniden çizer.
+  registerRefreshHandler('fuel', async () => {
+    await forceRefreshFuelStationCache();
+    await renderFuelSection(container);
+  });
   void renderMaintenanceSection(container);
   populateStationSelect(container);
 }

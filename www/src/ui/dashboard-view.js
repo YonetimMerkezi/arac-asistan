@@ -20,7 +20,8 @@
  */
 
 import '../ui/components/gauge.js';
-import { mountClockWeatherCard, unmountClockWeatherCard } from './components/clock-weather-card.js';
+import { mountClockWeatherCard, unmountClockWeatherCard, refreshWeatherNow } from './components/clock-weather-card.js';
+import { registerRefreshHandler } from '../core/refresh-registry.js';
 import { renderEditModePanel } from './dashboard-edit-panel.js';
 import { iconMarkup } from './icons.js';
 import { queryPid } from '../obd/elm327.js';
@@ -60,6 +61,11 @@ export function initDashboardView() {
   }
 
   render();
+
+  // "Kaydırarak yenile" - göstergeler zaten sürekli anlık okunuyor (poll
+  // döngüsü), yenilenebilecek ANLAMLI tek şey 15 dakikalık önbellekli hava
+  // durumu - onu önbelleği atlayarak yeniden çeker.
+  registerRefreshHandler('dashboard', refreshWeatherNow);
 
   onVehicleInfoChange((info) => {
     lastSupportedPids = info.supportedPids;

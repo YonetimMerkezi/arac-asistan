@@ -29,7 +29,8 @@ import { getFavoriteLocation, setFavoriteLocation } from '../maps/favorites-stor
 import { reverseGeocodeIlIlce } from '../maps/reverse-geocode.js';
 import { getFuelPrices } from '../maps/fuel-price-service.js';
 import { estimateAverageConsumption, estimateFuelCost } from '../fuel/route-cost-estimator.js';
-import { getFuelStationCache, onFuelStationCacheUpdate } from '../maps/fuel-station-cache.js';
+import { getFuelStationCache, onFuelStationCacheUpdate, forceRefreshFuelStationCache } from '../maps/fuel-station-cache.js';
+import { registerRefreshHandler } from '../core/refresh-registry.js';
 import { renderFuelPanel, clearFuelPanel } from './navigation-fuel-panel.js';
 import { mountGpsDetailCard } from './components/gps-detail-card.js';
 import { iconMarkup } from './icons.js';
@@ -126,6 +127,11 @@ export function initNavigationView() {
 
   const gpsDetailContainer = container.querySelector('[data-gps-detail]');
   if (gpsDetailContainer) mountGpsDetailCard(gpsDetailContainer);
+
+  // "Kaydırarak yenile" - yakıt istasyonu önbelleğini zorla tazeler; Yakıt
+  // kategorisi açıksa mevcut onFuelStationCacheUpdate aboneliği paneli
+  // otomatik yeniden çizer (kod tekrarı yok).
+  registerRefreshHandler('navigation', () => forceRefreshFuelStationCache());
 
   // KRİTİK: Bu harita, uygulama açılışında (Panel varsayılan sekme olduğu
   // için Harita o an GİZLİ/hidden durumdayken) oluşturuluyor. Leaflet,
