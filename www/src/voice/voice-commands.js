@@ -23,6 +23,7 @@ import { getNextUpcomingMaintenance } from '../maintenance/maintenance-reminder.
 import { readDtcCodes } from '../obd/elm327.js';
 import { getDtcDescription } from '../diagnostics/dtc-descriptions.js';
 import { recordDtcReading } from '../data/dtc-repository.js';
+import { launchMusicApp } from '../core/app-launcher.js';
 import { logInfo } from '../core/logger.js';
 
 /**
@@ -78,6 +79,10 @@ const COMMAND_RULES = [
   {
     test: (t) => t.includes('arıza kod') && (t.includes('oku') || t.includes('göster')),
     respond: () => announceDtcCodes(),
+  },
+  {
+    test: (t) => t.includes('müzik') && (t.includes('aç') || t.includes('çal') || t.includes('başlat')),
+    respond: () => announceMusicAppLaunch(),
   },
   {
     test: (t) => t.includes('arıza kod') && t.includes('sil'),
@@ -247,4 +252,14 @@ async function announceDtcCodes() {
  */
 async function clearDtcCodesViaVoice() {
   return 'Arıza kodlarını silmek için Arıza Merkezi ekranından onaylamanız gerekiyor, güvenlik amacıyla bu işlem sesli komutla yapılamıyor.';
+}
+
+/**
+ * "Müzik aç" komutu: yüklü ilk müzik uygulamasını (bkz. core/app-launcher.js)
+ * açar. Hiçbiri yüklü değilse dürüstçe belirtir - sahte başarı iddia edilmez.
+ * @returns {Promise<string>}
+ */
+async function announceMusicAppLaunch() {
+  const result = await launchMusicApp();
+  return result.ok ? `${result.label} açılıyor.` : 'Yüklü bir müzik uygulaması bulunamadı.';
 }
