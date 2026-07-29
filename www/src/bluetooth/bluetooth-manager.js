@@ -29,9 +29,6 @@ const RECONNECT_BASE_DELAY_MS = 2000;
 /** @type {number} Üstel geri çekilmenin tavan değeri (ms). */
 const RECONNECT_MAX_DELAY_MS = 30000;
 
-/** @type {number} Art arda başarısız denemeden sonra otomatik yeniden bağlanmayı durdur. */
-const MAX_RECONNECT_ATTEMPTS = 8;
-
 /** @type {number} Bu süreden (ms) uzun süre veri gelmezse bağlantı "zayıf" sayılır. */
 const WEAK_SIGNAL_THRESHOLD_MS = 4000;
 
@@ -116,6 +113,45 @@ export async function listPairedDevices() {
     logError('bluetooth-manager', 'Eşleştirilmiş cihazlar okunamadı', error);
     return [];
   }
+}
+
+/** @type {RegExp} Yaygın ELM327/OBD2 adaptör isim kalıpları (vaka duyarsız) - Ayarlar ekranındaki
+ * TÜM eşleştirilmiş cihazları (kulaklık, hoparlör vb.) listelemek yerine yalnızca gerçek OBD
+ * adaptörünü otomatik bulup önermek/bağlamak için kullanılır (bkz. findElmDevice/scanAndConnectElm). */
+const ELM_NAME_PATTERN = /obd|elm327|elm|v-?link|viecar|vgate|icar|konnwei|obdlink|obdii|obd2/i;
+
+/**
+ * Eşleştirilmiş cihazlar arasından ELM327/OBD2 adaptörüne benzeyen ilk cihazı bulur.
+ * @param {import('./native-bridge.js').PairedDevice[]} devices
+ * @returns {import('./native-bridge.js').PairedDevice|null}
+ */
+export function findElmDevice(devices) {
+  return devices.find((d) => d.name && ELM_NAME_PATTERN.test(d.name)) ?? null;
+}
+
+/**
+ * Car Scanner benzeri "tek dokunuşla bağlan" akışı: kullanıcıya HİÇBİR eşleştirilmiş
+ * cihaz listesi göstermeden, eşleştirilmiş cihazlar arasında ELM327/OBD2 adaptörünü
+ * kendisi bulup doğrudan bağlanır. Kullanıcının Bluetooth eşleştirme listesindeki
+ * alakasız cihazlarla (kulaklık vb.) uğraşmasını tamamen ortadan kaldırır.
+ *
+ * NOT: Android'de eşleştirme (pairing) işleminin kendisi hâlâ sistem Bluetooth
+ * ayarlarından yapılmalıdır - bu fonksiyon yalnızca ZATEN eşleştirilmiş cihazlar
+ * arasından ELM adaptörünü seçip bağlanmayı otomatikleştirir (Capacitor'ın Bluetooth
+ * Classic API'si eşleştirilmemiş cihazları taramaya izin vermez).
+ * @returns {Promise<{ok: true, device: import('./native-bridge.js').PairedDevice} | {ok: false, reason: 'not_found'|'connect_failed'}>}
+ */
+export async function scanAndConnectElm() {
+  const devices = await listPairedDevices();
+  const match = findElmDevice(devices);
+
+  if (!match) {
+    logWarn('bluetooth-manager', 'Eşleştirilmiş cihazlar arasında ELM327/OBD2 adaptörü bulunamadı');
+    return { ok: false, reason: 'not_found' };
+  }
+
+  const connected = await connectToDevice(match.address, match.name);
+  return connected ? { ok: true, device: match } : { ok: false, reason: 'connect_failed' };
 }
 
 /**
@@ -260,13 +296,20 @@ function handleRead(event) {
 
 /**
  * Üstel geri çekilmeli otomatik yeniden bağlanma zincirini planlar.
+ *
+ * DÜZELTME (kritik hata): Önceki sürümde MAX_RECONNECT_ATTEMPTS (8) denemeden
+ * sonra yeniden bağlanma TAMAMEN durduruluyordu. Araç sürülürken (motor RF
+ * gürültüsü, titreşimle OBD portundaki gevşeklik) kopma/yeniden bağlanma
+ * birkaç dakika içinde bu sınırı rahatlıkla aşabiliyordu - kullanıcı yolun
+ * ortasında telefona bakmadığı için "8 deneme tükendi, artık denemiyorum"
+ * durumunu fark edemiyor, sürüşün geri kalanında sessizce bağlantısız
+ * kalıyordu (sesli asistanın "bağlandı" demesi de bu yüzden yalnızca İLK
+ * birkaç yeniden bağlanmada duyuluyordu). Artık üst sınır YOK - gecikme
+ * 30 saniyede sabitlenip uygulama açık olduğu sürece SONSUZA KADAR denenir;
+ * bu, araç içi kullanım için doğru davranıştır (pes etmek, tekrar denemekten
+ * her zaman daha kötüdür).
  */
 function scheduleReconnect() {
-  if (reconnectAttempt >= MAX_RECONNECT_ATTEMPTS) {
-    logWarn('bluetooth-manager', 'Maksimum yeniden bağlanma denemesi aşıldı, durduruluyor');
-    return;
-  }
-
   const delay = Math.min(
     RECONNECT_BASE_DELAY_MS * 2 ** reconnectAttempt,
     RECONNECT_MAX_DELAY_MS,
