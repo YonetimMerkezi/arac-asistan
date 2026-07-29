@@ -18,6 +18,8 @@ import { getLastPosition } from '../core/gps-tracker.js';
 import { getFavoriteLocation } from '../maps/favorites-store.js';
 import { getDrivingRoute } from '../maps/route-service.js';
 import { findNearbyPoi } from '../maps/poi-search.js';
+import { getFuelPrices } from '../maps/fuel-price-service.js';
+import { reverseGeocodeIlIlce } from '../maps/reverse-geocode.js';
 import { getAggregateTripStats } from '../data/trip-repository.js';
 import { getNextUpcomingMaintenance } from '../maintenance/maintenance-reminder.js';
 import { readDtcCodes } from '../obd/elm327.js';
@@ -47,8 +49,22 @@ function describePid(pidHex, label) {
   return `${label} ${Math.round(entry.value)} ${entry.unit}.`;
 }
 
-/** @type {string} Henüz geliştirilmemiş modüllere ait komutlar için ortak, dürüst yanıt. */
-const NOT_READY_RESPONSE = 'Bu özellik henüz geliştirme aşamasında, yakında eklenecek.';
+/**
+ * @type {string} Uyandırma kelimesi - bir cümle bu kelimeyi İÇERMİYORSA hiç
+ * işlenmez (tamamen sessiz kalınır).
+ *
+ * NEDEN GEREKLİ: Sürekli dinleme modu, arabadaki SIRADAN KONUŞMALARI da
+ * yakalayıp "tanınmış cümle" olarak işleyebiliyor (log kayıtlarında
+ * "Bunlar hepsi bizim komşularım" gibi alakasız cümlelerin bile
+ * tanındığı görüldü). Eşleşmeyen HER cümleye "anlayamadım" demek bu
+ * yüzden çok rahatsız edici olurdu - yolcular arası her cümleye asistan
+ * araya girerdi. Uyandırma kelimesi bunu çözer: yalnızca bu kelimeyi
+ * İÇEREN cümleler "bana söylenmiş" sayılır; geri kalanı tamamen yok sayılır.
+ */
+const WAKE_WORD = 'asistan';
+
+/** @type {string} Uyandırma kelimesiyle başlayan ama HİÇBİR komuta uymayan cümle için yanıt. */
+const NOT_UNDERSTOOD_RESPONSE = 'Anlayamadım, tekrar eder misiniz?';
 
 /** @type {{test: (t: string) => boolean, respond: () => string}[]} */
 const COMMAND_RULES = [
@@ -98,7 +114,7 @@ const COMMAND_RULES = [
   },
   {
     test: (t) => t.includes('ucuz mazot') || t.includes('ucuz benzin'),
-    respond: () => NOT_READY_RESPONSE, // Faz 6: Yakıt
+    respond: () => announceCheapestFuel(),
   },
   {
     test: (t) => t.includes('bakım ne zaman') || t.includes('bakım zamanı'),
@@ -133,10 +149,14 @@ export function disposeVoiceCommands() {
 function handleTranscript(rawTranscript) {
   const normalized = rawTranscript.toLocaleLowerCase('tr-TR').trim();
 
+  // Uyandırma kelimesi YOKSA tamamen sessiz kalınır - sürücüler arası
+  // sıradan sohbetin her cümlesi işlenmesin diye (bkz. WAKE_WORD notu).
+  if (!normalized.includes(WAKE_WORD)) return;
+
   const rule = COMMAND_RULES.find((r) => r.test(normalized));
   if (!rule) {
-    // Tanınmayan cümlelerde sessiz kalınır - her duyulan sözü yanıtlamak
-    // (ör. sürücüler arası sohbeti) rahatsız edici olur.
+    logInfo('voice-commands', `Uyandırma kelimesi duyuldu ama komut eşleşmedi: "${normalized}"`);
+    void speak(NOT_UNDERSTOOD_RESPONSE);
     return;
   }
 
@@ -165,15 +185,16 @@ async function navigateToFavorite(favoriteId, label) {
     return 'Konumunuz henüz alınamadı.';
   }
 
-  const route = await getDrivingRoute(
+  const routes = await getDrivingRoute(
     { lat: current.latitude, lon: current.longitude },
     { lat: favorite.lat, lon: favorite.lon },
   );
 
-  if (!route) {
+  if (!routes || routes.length === 0) {
     return 'Rota şu anda hesaplanamıyor, internet bağlantınızı kontrol edin.';
   }
 
+  const route = routes[0];
   return `${label}e ${route.distanceKm.toFixed(0)} kilometre, tahmini ${Math.round(route.durationMinutes)} dakika. Rota navigasyon ekranında.`;
 }
 
@@ -209,6 +230,32 @@ async function announceAverageConsumption() {
 
   const litersPer100Km = (totalFuelL / totalDistanceKm) * 100;
   return `Ortalama tüketiminiz 100 kilometrede ${litersPer100Km.toFixed(1)} litre.`;
+}
+
+/**
+ * "Ucuz mazot/benzin" komutu için: bulunduğu il/ilçedeki TÜM dağıtıcıların
+ * fiyatlarından en ucuz benzini bulup seslendirir.
+ * @returns {Promise<string>}
+ */
+async function announceCheapestFuel() {
+  const current = getLastPosition();
+  if (!current) {
+    return 'Konumunuz henüz alınamadı.';
+  }
+
+  const location = await reverseGeocodeIlIlce(current.latitude, current.longitude);
+  if (!location) {
+    return 'Bulunduğunuz il/ilçe belirlenemedi.';
+  }
+
+  const prices = await getFuelPrices(location.il, location.ilce, current.longitude);
+  const withPrice = prices.filter((p) => p.benzin !== null);
+  if (withPrice.length === 0) {
+    return `${location.il} için yakıt fiyatı bulunamadı.`;
+  }
+
+  const cheapest = withPrice.reduce((min, s) => (s.benzin < min.benzin ? s : min));
+  return `En ucuz benzin ${cheapest.dagitici}'de, litresi ${cheapest.benzin} lira.`;
 }
 
 /**

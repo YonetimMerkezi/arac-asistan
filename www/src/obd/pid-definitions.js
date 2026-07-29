@@ -58,6 +58,12 @@ export const PID_DEFINITIONS = {
     expectedBytes: 1,
     decode: ([a]) => ((a - 128) * 100) / 128,
   },
+  '0B': {
+    name: 'Emme Manifoldu Mutlak Basıncı',
+    unit: 'kPa',
+    expectedBytes: 1,
+    decode: ([a]) => a,
+  },
   '0C': {
     name: 'Motor Devri',
     unit: 'RPM',
@@ -94,11 +100,59 @@ export const PID_DEFINITIONS = {
     expectedBytes: 1,
     decode: ([a]) => (a * 100) / 255,
   },
+  '14': {
+    name: 'Oksijen Sensörü 1 (Bank 1) Voltajı',
+    unit: 'V',
+    expectedBytes: 2,
+    decode: ([a]) => a / 200,
+  },
+  '15': {
+    name: 'Oksijen Sensörü 2 (Bank 1) Voltajı',
+    unit: 'V',
+    expectedBytes: 2,
+    decode: ([a]) => a / 200,
+  },
+  '1F': {
+    name: 'Motor Çalıştığından Beri Geçen Süre',
+    unit: 's',
+    expectedBytes: 2,
+    decode: ([a, b]) => a * 256 + b,
+  },
+  '21': {
+    name: 'Arıza Lambası Yanarken Alınan Mesafe',
+    unit: 'km',
+    expectedBytes: 2,
+    decode: ([a, b]) => a * 256 + b,
+  },
+  '2C': {
+    name: 'Komuta Edilen EGR',
+    unit: '%',
+    expectedBytes: 1,
+    decode: ([a]) => (a * 100) / 255,
+  },
+  '2D': {
+    name: 'EGR Hatası',
+    unit: '%',
+    expectedBytes: 1,
+    decode: ([a]) => ((a - 128) * 100) / 128,
+  },
+  '2E': {
+    name: 'Komuta Edilen Evaporatif Temizleme',
+    unit: '%',
+    expectedBytes: 1,
+    decode: ([a]) => (a * 100) / 255,
+  },
   '2F': {
     name: 'Yakıt Seviyesi',
     unit: '%',
     expectedBytes: 1,
     decode: ([a]) => (a * 100) / 255,
+  },
+  '31': {
+    name: 'Arıza Kodları Silindiğinden Beri Alınan Mesafe',
+    unit: 'km',
+    expectedBytes: 2,
+    decode: ([a, b]) => a * 256 + b,
   },
   '33': {
     name: 'Basınç (Emme Manifoldu)',
@@ -106,11 +160,41 @@ export const PID_DEFINITIONS = {
     expectedBytes: 1,
     decode: ([a]) => a,
   },
+  '3C': {
+    name: 'Katalizör Sıcaklığı (Bank 1, Sensör 1)',
+    unit: '°C',
+    expectedBytes: 2,
+    decode: ([a, b]) => (a * 256 + b) / 10 - 40,
+  },
+  '3D': {
+    name: 'Katalizör Sıcaklığı (Bank 2, Sensör 1)',
+    unit: '°C',
+    expectedBytes: 2,
+    decode: ([a, b]) => (a * 256 + b) / 10 - 40,
+  },
   '42': {
     name: 'Kontrol Modülü Voltajı',
     unit: 'V',
     expectedBytes: 2,
     decode: ([a, b]) => (a * 256 + b) / 1000,
+  },
+  '43': {
+    name: 'Mutlak Motor Yükü',
+    unit: '%',
+    expectedBytes: 2,
+    decode: ([a, b]) => ((a * 256 + b) * 100) / 255,
+  },
+  '44': {
+    name: 'Komuta Edilen Hava/Yakıt Eşdeğerlik Oranı',
+    unit: 'λ',
+    expectedBytes: 2,
+    decode: ([a, b]) => ((a * 256 + b) * 2) / 65535,
+  },
+  '45': {
+    name: 'Bağıl Gaz Kelebeği Konumu',
+    unit: '%',
+    expectedBytes: 1,
+    decode: ([a]) => (a * 100) / 255,
   },
   '46': {
     name: 'Dış Ortam Sıcaklığı',
@@ -118,11 +202,35 @@ export const PID_DEFINITIONS = {
     expectedBytes: 1,
     decode: ([a]) => a - 40,
   },
+  '49': {
+    name: 'Gaz Pedalı Konumu D',
+    unit: '%',
+    expectedBytes: 1,
+    decode: ([a]) => (a * 100) / 255,
+  },
+  '4A': {
+    name: 'Gaz Pedalı Konumu E',
+    unit: '%',
+    expectedBytes: 1,
+    decode: ([a]) => (a * 100) / 255,
+  },
+  '4C': {
+    name: 'Komuta Edilen Gaz Kelebeği Aktüatörü',
+    unit: '%',
+    expectedBytes: 1,
+    decode: ([a]) => (a * 100) / 255,
+  },
   '5C': {
     name: 'Motor Yağ Sıcaklığı',
     unit: '°C',
     expectedBytes: 1,
     decode: ([a]) => a - 40,
+  },
+  '5E': {
+    name: 'Motor Yakıt Tüketim Hızı',
+    unit: 'L/h',
+    expectedBytes: 2,
+    decode: ([a, b]) => (a * 256 + b) / 20,
   },
 };
 

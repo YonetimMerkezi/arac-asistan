@@ -32,6 +32,21 @@ let listeningModeActive = false;
 let recognitionInFlight = false;
 
 /**
+ * @type {boolean} TTS konuşurken TRUE olur - bu sırada dinleme durdurulur.
+ *
+ * DÜZELTME (kritik hata - geri besleme döngüsü): Önceden tts.js ile stt.js
+ * arasında HİÇBİR koordinasyon yoktu - uygulama sesli cevap SÖYLERKEN
+ * mikrofon AYNI ANDA dinlemeye devam ediyordu. Telefon kendi hoparlöründen
+ * çıkan sesi (ör. "En yakın akaryakıt istasyonu...") mikrofonla tekrar
+ * duyup YENİ bir kullanıcı cümlesi sanıyordu - cevabın içinde zaten
+ * "akaryakıt istasyonu" geçtiği için komut KENDİ KENDİNİ tekrar
+ * tetikliyordu. "Aynı soruya aralıklarla defalarca cevap verdi"
+ * şikayetinin gerçek sebebi buydu. Artık tts.js konuşmaya başlarken
+ * pauseListeningForSpeech(), bitirince resumeListeningAfterSpeech() çağırır.
+ */
+let pausedForSpeech = false;
+
+/**
  * İzinleri kontrol eder/ister ve cihazda tanıma motorunun var olup olmadığını
  * doğrular. Dinlemeye başlamadan önce bir kez çağrılmalıdır.
  * @returns {Promise<boolean>}
@@ -91,6 +106,31 @@ export function isListeningModeActive() {
 }
 
 /**
+ * TTS konuşmaya başlarken çağrılır - mikrofonun kendi sesini "duyup" komutu
+ * yeniden tetiklemesini önlemek için dinlemeyi HEMEN durdurur (o an bir
+ * tanıma isteği sürüyorsa onu da iptal eder).
+ */
+export function pauseListeningForSpeech() {
+  pausedForSpeech = true;
+  if (recognitionInFlight) {
+    SpeechRecognition.stop().catch(() => {
+      /* Zaten durmuşsa hata yok sayılır. */
+    });
+  }
+}
+
+/**
+ * TTS konuşmayı bitirdikten sonra çağrılır - dinleme modu hâlâ açıksa
+ * yeniden başlatır.
+ */
+export function resumeListeningAfterSpeech() {
+  pausedForSpeech = false;
+  if (listeningModeActive && !recognitionInFlight) {
+    setTimeout(listenOnce, RESTART_DELAY_MS);
+  }
+}
+
+/**
  * Tanınan cümlelere abone olur.
  * @param {(transcript: string) => void} callback
  * @returns {() => void}
@@ -105,7 +145,7 @@ export function onTranscript(callback) {
  * dinleme modu hâlâ açıksa döngüyü tekrarlar.
  */
 async function listenOnce() {
-  if (!listeningModeActive || recognitionInFlight) return;
+  if (!listeningModeActive || recognitionInFlight || pausedForSpeech) return;
 
   recognitionInFlight = true;
   try {
@@ -132,7 +172,7 @@ async function listenOnce() {
     logWarn('stt', 'Bu turda tanıma alınamadı', error);
   } finally {
     recognitionInFlight = false;
-    if (listeningModeActive) {
+    if (listeningModeActive && !pausedForSpeech) {
       setTimeout(listenOnce, RESTART_DELAY_MS);
     }
   }

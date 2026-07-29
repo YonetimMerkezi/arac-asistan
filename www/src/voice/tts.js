@@ -11,7 +11,12 @@
 
 import { TextToSpeech } from '@capacitor-community/text-to-speech';
 import { Preferences } from '@capacitor/preferences';
+import { pauseListeningForSpeech, resumeListeningAfterSpeech } from './stt.js';
 import { logError, logInfo } from '../core/logger.js';
+
+/** @type {number} TTS bittikten sonra dinlemeyi yeniden açmadan önceki ek bekleme (ms) -
+ * hoparlörün son sesinin/yankısının mikrofona ulaşma ihtimaline karşı bir tampon. */
+const ECHO_GUARD_MS = 400;
 
 /** @type {string} Uygulama genelinde kullanılan dil. */
 const LANGUAGE = 'tr-TR';
@@ -101,6 +106,11 @@ async function processQueue() {
   speaking = true;
   const task = queue.shift();
 
+  // KRİTİK: konuşmaya başlamadan ÖNCE dinlemeyi durdur - aksi halde mikrofon
+  // hoparlörden çıkan bu cümleyi "yeni bir kullanıcı sözü" sanıp komutu
+  // kendi kendine yeniden tetikleyebilir (bkz. stt.js'teki düzeltme notu).
+  pauseListeningForSpeech();
+
   try {
     await TextToSpeech.speak({
       text: task.text,
@@ -116,6 +126,7 @@ async function processQueue() {
   } finally {
     speaking = false;
     task.resolve();
+    setTimeout(resumeListeningAfterSpeech, ECHO_GUARD_MS);
     processQueue();
   }
 }

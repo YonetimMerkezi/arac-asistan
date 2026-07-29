@@ -12,6 +12,7 @@ import { getState as getBluetoothState } from '../bluetooth/bluetooth-manager.js
 import { recordDtcReading, listDtcHistory } from '../data/dtc-repository.js';
 import { getDtcDescription } from '../diagnostics/dtc-descriptions.js';
 import { generateDtcPdfReport } from '../diagnostics/dtc-report-pdf.js';
+import { openAllSensorsModal } from './components/all-sensors-modal.js';
 import { saveAndShareReport } from '../trip/file-export.js';
 import { Browser } from '@capacitor/browser';
 import { logWarn } from '../core/logger.js';
@@ -44,6 +45,7 @@ function render(container) {
       <button type="button" data-action="read" class="sda-nav-btn" style="background:var(--sda-accent-soft); flex:1;">Kodları Oku</button>
       <button type="button" data-action="clear" class="sda-nav-btn" style="background:var(--sda-danger-soft); flex:1;">Kodları Sil</button>
     </div>
+    <button type="button" data-action="all-sensors" class="sda-btn sda-btn--secondary" style="width:100%; margin-bottom:16px;">Tüm Sensörler</button>
     <div data-codes-list></div>
     <h3 style="margin:16px 0 4px;">Geçmiş</h3>
     <div data-history-list></div>
@@ -51,6 +53,7 @@ function render(container) {
 
   container.querySelector('[data-action="read"]')?.addEventListener('click', () => handleRead(container));
   container.querySelector('[data-action="clear"]')?.addEventListener('click', () => handleClear(container));
+  container.querySelector('[data-action="all-sensors"]')?.addEventListener('click', () => openAllSensorsModal());
 
   renderCodesList(container);
   void renderHistory(container);
