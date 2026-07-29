@@ -23,12 +23,16 @@ let clockInterval = null;
 /** @type {(() => void)|null} */
 let unsubscribePosition = null;
 
+/** @type {HTMLElement|null} Şu an bağlı kart konteyneri - refreshWeatherNow() için. */
+let mountedContainer = null;
+
 /**
  * Saat/tarih/hava durumu kartını verilen konteynere monte eder. Yalnızca
  * Panel görünümü ilk kez oluşturulurken bir kez çağrılmalıdır.
  * @param {HTMLElement} container - İçine kart HTML'inin ekleneceği eleman.
  */
 export function mountClockWeatherCard(container) {
+  mountedContainer = container;
   container.innerHTML = `
     <div class="sda-card sda-card--elevated" style="display:flex; align-items:center; justify-content:space-between; margin-bottom:12px;">
       <div>
@@ -61,6 +65,19 @@ export function unmountClockWeatherCard() {
   clockInterval = null;
   unsubscribePosition?.();
   unsubscribePosition = null;
+  mountedContainer = null;
+}
+
+/**
+ * Hava durumunu ÖNBELLEĞİ ATLAYARAK yeniden çeker - "kaydırarak yenile"
+ * jesti tarafından çağrılır (bkz. core/refresh-registry.js).
+ * @returns {Promise<void>}
+ */
+export async function refreshWeatherNow() {
+  if (!mountedContainer) return;
+  const last = getLastPosition();
+  if (!last) return;
+  await refreshWeather(mountedContainer, last.latitude, last.longitude, true);
 }
 
 /**
@@ -82,13 +99,14 @@ function tickClock(container) {
  * @param {HTMLElement} container
  * @param {number} lat
  * @param {number} lon
+ * @param {boolean} [force=false]
  */
-async function refreshWeather(container, lat, lon) {
+async function refreshWeather(container, lat, lon, force = false) {
   const weatherEl = container.querySelector('[data-weather]');
   if (!weatherEl) return;
 
   try {
-    const weather = await getCurrentWeather(lat, lon);
+    const weather = await getCurrentWeather(lat, lon, force);
     if (!weather || weather.temperatureC === null) {
       weatherEl.innerHTML = '<p class="sda-card__label">Hava durumu alınamadı</p>';
       return;
