@@ -10,6 +10,7 @@
  * ---------------------------------------------------------------------------
  */
 import { initThemeManager } from './theme-manager.js';
+import { initKeepAwake } from './keep-awake.js';
 import { requestAllPermissionsUpfront } from './permissions-bootstrap.js';
 import { initViewRouter } from './view-router.js';
 import { mountNavIcons } from './nav-icons.js';
@@ -90,6 +91,7 @@ window.addEventListener('unhandledrejection', (event) => {
 async function bootstrap() {
   try {
     await initThemeManager();
+    void initKeepAwake();
     void requestAllPermissionsUpfront();
     initViewRouter('dashboard');
     mountNavIcons();
