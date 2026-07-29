@@ -23,6 +23,7 @@ import { logError, logInfo, logWarn } from './logger.js';
  * @property {number} speedKmh - 0 veya pozitif; GPS hız verisi yoksa 0.
  * @property {number|null} headingDeg - Pusula yönü (derece), yoksa null.
  * @property {number} accuracy - Metre.
+ * @property {number|null} altitude - Rakım (metre), cihaz/GPS sağlamıyorsa null.
  * @property {number} timestamp - Unix ms.
  */
 
@@ -128,7 +129,7 @@ export function getLastPosition() {
  * @param {import('@capacitor/geolocation').Position} position
  */
 function handlePosition(position) {
-  const { latitude, longitude, speed, heading, accuracy } = position.coords;
+  const { latitude, longitude, speed, heading, accuracy, altitude } = position.coords;
 
   lastPosition = {
     latitude,
@@ -136,6 +137,7 @@ function handlePosition(position) {
     speedKmh: speed && speed > 0 ? speed * 3.6 : 0,
     headingDeg: typeof heading === 'number' && !Number.isNaN(heading) ? heading : null,
     accuracy,
+    altitude: typeof altitude === 'number' && !Number.isNaN(altitude) ? altitude : null,
     timestamp: Date.now(),
   };
 
