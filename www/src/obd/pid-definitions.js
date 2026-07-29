@@ -34,11 +34,41 @@ export const PID_DEFINITIONS = {
     expectedBytes: 1,
     decode: ([a]) => a - 40,
   },
+  '06': {
+    name: 'Kısa Dönem Yakıt Ayarı (Bank 1)',
+    unit: '%',
+    expectedBytes: 1,
+    decode: ([a]) => ((a - 128) * 100) / 128,
+  },
+  '07': {
+    name: 'Uzun Dönem Yakıt Ayarı (Bank 1)',
+    unit: '%',
+    expectedBytes: 1,
+    decode: ([a]) => ((a - 128) * 100) / 128,
+  },
+  '08': {
+    name: 'Kısa Dönem Yakıt Ayarı (Bank 2)',
+    unit: '%',
+    expectedBytes: 1,
+    decode: ([a]) => ((a - 128) * 100) / 128,
+  },
+  '09': {
+    name: 'Uzun Dönem Yakıt Ayarı (Bank 2)',
+    unit: '%',
+    expectedBytes: 1,
+    decode: ([a]) => ((a - 128) * 100) / 128,
+  },
   '0C': {
     name: 'Motor Devri',
     unit: 'RPM',
     expectedBytes: 2,
     decode: ([a, b]) => (a * 256 + b) / 4,
+  },
+  '0E': {
+    name: 'Avans Zamanlaması',
+    unit: '°',
+    expectedBytes: 1,
+    decode: ([a]) => a / 2 - 64,
   },
   '0D': {
     name: 'Araç Hızı',

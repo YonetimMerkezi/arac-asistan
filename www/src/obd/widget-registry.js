@@ -26,6 +26,12 @@
  * @property {number} [dangerAbove]
  * @property {'speed'|'temp'} [unitKind] - Ayarlar'daki birim tercihine göre dönüştürülür.
  * @property {number} defaultColorHue - Kullanıcı özel renk seçmediyse kullanılan ton (0-360).
+ * @property {string[]} [requiresPids] - Bu widget TEK bir ham PID değil, birden fazla
+ *   PID'den TÜRETİLMİŞ (hesaplanmış) bir değerse (ör. "Anlık Tüketim" - MAF + hız),
+ *   bağımlı olduğu ham PID kodlarını listeler. dashboard-view.js hem görünürlük
+ *   kontrolünde (araç bu PID'leri desteklemiyorsa kart gizlenir) hem poll
+ *   döngüsünde (pid.js'e tek sorgu yerine özel hesaplama akışına yönlendirmek
+ *   için) bunu kullanır.
  */
 
 /** @type {WidgetDefinition[]} Kayıtlı TÜM widget'lar - kullanıcı bunların bir alt kümesini/sırasını seçer. */
@@ -42,6 +48,12 @@ export const WIDGET_REGISTRY = [
   { pid: '10', label: 'Hava Kütle Akışı', unit: 'g/s', min: 0, max: 400, defaultColorHue: 199 },
   { pid: '33', label: 'Emme Manifoldu Basıncı', unit: 'kPa', min: 0, max: 255, defaultColorHue: 291 },
   { pid: '5C', label: 'Motor Yağ Sıcaklığı', unit: '°C', min: 0, max: 150, dangerAbove: 120, unitKind: 'temp', defaultColorHue: 4 },
+  { pid: '06', label: 'Kısa Dönem Yakıt Ayarı (Bank 1)', unit: '%', min: -100, max: 100, defaultColorHue: 335 },
+  { pid: '07', label: 'Uzun Dönem Yakıt Ayarı (Bank 1)', unit: '%', min: -100, max: 100, defaultColorHue: 335 },
+  { pid: '08', label: 'Kısa Dönem Yakıt Ayarı (Bank 2)', unit: '%', min: -100, max: 100, defaultColorHue: 291 },
+  { pid: '09', label: 'Uzun Dönem Yakıt Ayarı (Bank 2)', unit: '%', min: -100, max: 100, defaultColorHue: 291 },
+  { pid: '0E', label: 'Avans Zamanlaması', unit: '°', min: -64, max: 64, defaultColorHue: 48 },
+  { pid: 'CALC_L100', label: 'Anlık Tüketim', unit: 'L/100km', min: 0, max: 30, defaultColorHue: 142, requiresPids: ['10', '0D'] },
 ];
 
 /** @type {string[]} Kullanıcı hiç özelleştirme yapmadıysa gösterilecek varsayılan widget sırası. */
