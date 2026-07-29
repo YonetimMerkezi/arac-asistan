@@ -80,8 +80,23 @@ export function sendCommand(command) {
   return new Promise((resolve, reject) => {
     const timeoutHandle = setTimeout(() => {
       const index = queue.findIndex((c) => c.timeoutHandle === timeoutHandle);
-      if (index !== -1) queue.splice(index, 1);
-      if (queue[0]?.timeoutHandle === timeoutHandle) processing = false;
+      if (index === -1) return; // Bu arada yanıt geldi ve zaten çözüldü - iptal.
+
+      // KRİTİK DÜZELTME: Bu komutun kuyruğun BAŞINDA olup olmadığını (yani şu
+      // an "processing" bayrağının GERÇEKTEN bu komut için true olup olmadığını)
+      // SPLICE'TAN ÖNCE kontrol etmek gerekir. Önceki sürüm önce spliceliyor,
+      // SONRA "queue[0] bu mu?" diye bakıyordu - ama o an queue[0] artık BİR
+      // SONRAKİ komuttu (timeout olan zaten çıkarılmıştı), bu yüzden koşul asla
+      // doğru olmuyordu ve `processing` SONSUZA DEK true kalıyordu. Sonuç: İLK
+      // zaman aşımından (ör. tek seferlik bir ATL0 yanıtsızlığı) SONRA gönderilen
+      // HER komut (sıradaki init komutları + TÜM PID sorguları) processQueue()'nun
+      // "processing==true, gönderme" korumasına takılıp sessizce kuyrukta
+      // bekleyip KENDİ zaman aşımlarına uğruyordu - "bağlandı ama hiç veri
+      // gelmiyor" şikayetinin gerçek kök nedeni buydu.
+      const wasCurrentlyProcessing = index === 0;
+      queue.splice(index, 1);
+      if (wasCurrentlyProcessing) processing = false;
+
       reject(new Error(`Zaman aşımı: ${command}`));
       processQueue();
     }, COMMAND_TIMEOUT_MS);
