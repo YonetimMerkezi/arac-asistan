@@ -12,6 +12,8 @@
  */
 
 import { logInfo, logWarn } from './logger.js';
+import { attachPullToRefresh } from '../ui/components/pull-to-refresh.js';
+import { getRefreshHandler } from './refresh-registry.js';
 
 /** @type {string} Alt gezinme düğmelerinde kullanılan veri özniteliği. */
 const NAV_BUTTON_SELECTOR = '[data-nav-target]';
@@ -39,6 +41,16 @@ export function initViewRouter(initialView) {
         navigateTo(target);
       }
     });
+  });
+
+  // Her ekrana "kaydırarak yenile" jesti eklenir. Handler'ı ŞİMDİ değil,
+  // TETİKLENDİĞİ ANDA arar (getRefreshHandler çağrısı callback İÇİNDE) -
+  // çünkü ekranların kendi init fonksiyonları (ör. initDashboardView())
+  // henüz çalışmamış olabilir, bu yüzden henüz handler kayıtlı olmayabilir.
+  document.querySelectorAll(VIEW_SELECTOR).forEach((view) => {
+    const viewName = view.getAttribute('data-view');
+    if (!viewName) return;
+    attachPullToRefresh(view, () => getRefreshHandler(viewName)());
   });
 
   navigateTo(initialView);
