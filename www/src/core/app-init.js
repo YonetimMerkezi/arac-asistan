@@ -43,6 +43,7 @@ import { initDiagnosticsView } from '../ui/diagnostics-view.js';
 import { initAiView } from '../ui/ai-view.js';
 import { initSettingsView } from '../ui/settings-view.js';
 import { initFavoriteBrandsStore } from './favorite-brands-store.js';
+import { initStationBrandStore } from '../maps/station-brand-store.js';
 import { initFuelStationCache } from '../maps/fuel-station-cache.js';
 import { initBackgroundService } from './background-service.js';
 
@@ -84,6 +85,7 @@ async function bootstrap() {
     await initTts();
     await initDashboardConfigStore();
     await initFavoriteBrandsStore();
+    await initStationBrandStore();
     await initDatabase();
     await initFavoritesStore();
     await initBluetoothManager();

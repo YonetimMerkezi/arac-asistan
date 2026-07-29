@@ -18,6 +18,8 @@ const STORAGE_KEY = 'sda_dashboard_config';
  * @typedef {Object} WidgetInstanceConfig
  * @property {string} pid
  * @property {number|null} colorHue - null ise widget'ın kendi varsayılan rengi kullanılır.
+ * @property {'arc'|'needle'|'digital'|'bar'|null} [gaugeStyle] - null/tanımsız
+ *   ise "arc" (imza yay tasarımı) kullanılır - bkz. ui/components/gauge.js.
  */
 
 /**
@@ -26,7 +28,7 @@ const STORAGE_KEY = 'sda_dashboard_config';
  */
 
 /** @type {DashboardConfig} */
-let current = { widgets: DEFAULT_WIDGET_ORDER.map((pid) => ({ pid, colorHue: null })) };
+let current = { widgets: DEFAULT_WIDGET_ORDER.map((pid) => ({ pid, colorHue: null, gaugeStyle: null })) };
 
 /** @type {Set<(config: DashboardConfig) => void>} */
 const listeners = new Set();
@@ -73,6 +75,20 @@ export async function setDashboardWidgets(widgets) {
 export async function setWidgetColor(pid, colorHue) {
   current = {
     widgets: current.widgets.map((w) => (w.pid === pid ? { ...w, colorHue } : w)),
+  };
+  await persist();
+  notify();
+}
+
+/**
+ * Tek bir widget'ın gösterge tipini (arc/needle/digital/bar) değiştirir.
+ * @param {string} pid
+ * @param {'arc'|'needle'|'digital'|'bar'|null} gaugeStyle
+ * @returns {Promise<void>}
+ */
+export async function setWidgetStyle(pid, gaugeStyle) {
+  current = {
+    widgets: current.widgets.map((w) => (w.pid === pid ? { ...w, gaugeStyle } : w)),
   };
   await persist();
   notify();
