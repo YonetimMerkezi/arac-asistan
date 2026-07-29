@@ -10,6 +10,7 @@
  * ---------------------------------------------------------------------------
  */
 import { initThemeManager } from './theme-manager.js';
+import { requestAllPermissionsUpfront } from './permissions-bootstrap.js';
 import { initViewRouter } from './view-router.js';
 import { mountNavIcons } from './nav-icons.js';
 import { initUnitsStore } from './units-store.js';
@@ -19,12 +20,15 @@ import { logError, logInfo, logWarn } from './logger.js';
 import {
   initBluetoothManager,
   tryAutoConnect,
+  getState as getBluetoothState,
   onStateChange as onBluetoothStateChange,
 } from '../bluetooth/bluetooth-manager.js';
 import { attachElm327Transport, detachElm327Transport, runInitSequence, discoverSupportedPids, readVin, readFuelType } from '../obd/elm327.js';
+import { setEcuStatus, getEcuStatus, onEcuStatusChange } from '../obd/ecu-connection-store.js';
 import { setVehicleInfo } from './vehicle-info-store.js';
 import { initDashboardView } from '../ui/dashboard-view.js';
 import { speakConnectionGreeting } from '../voice/greeting.js';
+import { speak } from '../voice/tts.js';
 import { initVoiceAlerts } from '../voice/voice-alerts.js';
 import { initVoiceCommands } from '../voice/voice-commands.js';
 import { startListeningMode, stopListeningMode } from '../voice/stt.js';
@@ -58,6 +62,13 @@ const OWNER_NAME = 'Sedat';
  */
 let elm327InitializedForThisConnection = false;
 
+/** @type {boolean} Bu bağlantı için gerçekten en az bir PID okuması BAŞARILI oldu mu
+ * (bkz. speakConnectionGreeting'in dönüş değeri) - yalnızca bu true iken, bağlantı
+ * gerçekten koptuğunda sesli "bağlantı kesildi" uyarısı verilir. Yanlış pozitif
+ * "kesildi" uyarısını önler (hiç gerçekten bağlanmamışken "kesildi" demek anlamsız).
+ */
+let isVehicleConnectionVerified = false;
+
 // GELİŞTİRME NOTU: Masaüstü devtools erişimi olmadığı için (yalnızca
 // telefondan geliştiriliyor), bootstrap() dışında (ör. "void" ile
 // beklenmeden çağrılan fonksiyonlarda) oluşan hataları da yakalayıp
@@ -79,6 +90,7 @@ window.addEventListener('unhandledrejection', (event) => {
 async function bootstrap() {
   try {
     await initThemeManager();
+    void requestAllPermissionsUpfront();
     initViewRouter('dashboard');
     mountNavIcons();
     await initUnitsStore();
@@ -120,6 +132,17 @@ async function bootstrap() {
         void initializeElm327AndVoice();
       } else if (state.status !== 'connected') {
         elm327InitializedForThisConnection = false;
+        setEcuStatus('idle');
+
+        // DÜZELTME: "bağlantı kesildi" sesli uyarısı hiç yoktu - kullanıcı
+        // sürüş sırasında telefona bakmadan bağlantının sessizce koptuğunu
+        // fark edemiyordu. Yalnızca DAHA ÖNCE gerçekten doğrulanmış bir
+        // bağlantı varsa (isVehicleConnectionVerified) uyarı verilir - hiç
+        // bağlanamamışken de "kesildi" demek yanlış/kafa karıştırıcı olurdu.
+        if (isVehicleConnectionVerified) {
+          isVehicleConnectionVerified = false;
+          void speak('Araç bağlantısı kesildi.');
+        }
       }
     });
 
@@ -138,42 +161,97 @@ async function bootstrap() {
  * Bluetooth bağlantısı kurulduğunda (kaynağı fark etmeksizin) ELM327
  * başlatma dizisini, PID keşfini, araç kimlik bilgilerini, karşılama
  * cümlesini ve sesli komut dinlemeyi başlatır.
+ *
+ * DÜZELTME (kritik hata): Önceki sürüm runInitSequence()/discoverSupportedPids()/
+ * readVin()/readFuelType() - hepsi kendi hatalarını YUTUP boş sonuçla dönüyordu
+ * (tasarım gereği, tek bir PID hatası tüm zinciri iptal etmesin diye) - bu
+ * yüzden bu fonksiyonun try/catch'i NEREDEYSE HİÇBİR ZAMAN hataya düşmüyordu.
+ * Sonuç: sesli komut sistemi ve "bağlantı başarılı" karşılaması, ARAÇTAN
+ * GERÇEKTEN TEK BİR VERİ BİLE ALINMASA bile koşulsuz başlatılıyordu - "sanki
+ * bağlantıdan bağımsız çalışıyor" şikayetinin sebebi buydu. Artık
+ * speakConnectionGreeting()'in döndürdüğü GERÇEK doğrulama sonucuna göre karar
+ * verilir: doğrulanamazsa sesli komut/uyarı sistemi HİÇ başlatılmaz, birkaç
+ * saniye sonra otomatik tekrar denenir (sınırlı sayıda - sonsuz sesli spam olmasın).
  * @returns {Promise<void>}
  */
 async function initializeElm327AndVoice() {
-  try {
-    attachElm327Transport();
-    await runInitSequence();
+  const MAX_ATTEMPTS = 3;
+  const RETRY_DELAY_MS = 4000;
 
-    const [supportedPids, vin, fuelType] = await Promise.all([
-      discoverSupportedPids(),
-      readVin(),
-      readFuelType(),
-    ]);
+  setEcuStatus('handshaking');
 
-    setVehicleInfo({ supportedPids, vin, fuelType });
+  for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt += 1) {
+    try {
+      attachElm327Transport();
+      await runInitSequence();
 
-    logInfo('app-init', 'Araç bilgileri alındı', {
-      supportedPidCount: supportedPids.length,
-      vin,
-      fuelType,
-    });
+      const [supportedPids, vin, fuelType] = await Promise.all([
+        discoverSupportedPids(),
+        readVin(),
+        readFuelType(),
+      ]);
 
-    initVoiceAlerts();
-    initVoiceCommands();
-    await speakConnectionGreeting(OWNER_NAME);
-    void startListeningMode();
-  } catch (error) {
-    logError('app-init', 'ELM327 başlatma sırasında hata', error);
-    detachElm327Transport();
-    stopListeningMode();
-    elm327InitializedForThisConnection = false;
+      setVehicleInfo({ supportedPids, vin, fuelType });
+
+      logInfo('app-init', `Araç bilgileri alındı (deneme ${attempt}/${MAX_ATTEMPTS})`, {
+        supportedPidCount: supportedPids.length,
+        vin,
+        fuelType,
+      });
+
+      // KRİTİK: greeting'in kendi PID okumaları (motor sıcaklığı, dış sıcaklık,
+      // voltaj, yakıt) GERÇEK doğrulama sinyalidir - "başarılı" yalnızca en az
+      // biri gerçekten çalışırsa döner.
+      const verified = await speakConnectionGreeting(OWNER_NAME);
+
+      if (!verified) {
+        if (attempt < MAX_ATTEMPTS) {
+          logWarn('app-init', `Bağlantı doğrulanamadı, ${RETRY_DELAY_MS}ms sonra tekrar denenecek (${attempt}/${MAX_ATTEMPTS})`);
+          await sleep(RETRY_DELAY_MS);
+          continue; // Bir sonraki denemeye geç.
+        }
+        logWarn('app-init', 'Bağlantı birden çok denemeden sonra hâlâ doğrulanamadı, sesli komut sistemi başlatılmıyor');
+        // Car Scanner Pro'daki gibi somut bir ipucu - en yaygın gerçek sebep budur.
+        setEcuStatus('failed', 'Kontak açık mı, motor çalışıyor mu kontrol edin');
+        return;
+      }
+
+      isVehicleConnectionVerified = true;
+      setEcuStatus('connected');
+      initVoiceAlerts();
+      initVoiceCommands();
+      void startListeningMode();
+      return; // Başarılı - döngüden çık.
+    } catch (error) {
+      logError('app-init', `ELM327 başlatma sırasında hata (deneme ${attempt}/${MAX_ATTEMPTS})`, error);
+      detachElm327Transport();
+      stopListeningMode();
+      if (attempt >= MAX_ATTEMPTS) {
+        elm327InitializedForThisConnection = false;
+        setEcuStatus('failed', 'Bağlantı hatası - tekrar deneyin');
+        return;
+      }
+      await sleep(RETRY_DELAY_MS);
+    }
   }
 }
 
 /**
- * Üst bardaki bağlantı durumu noktasını (sda-status-dot) bluetooth-manager
- * durumuna göre günceller.
+ * @param {number} ms
+ * @returns {Promise<void>}
+ */
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+/**
+ * Üst bardaki bağlantı durumu noktasını (sda-status-dot) günceller.
+ *
+ * DÜZELTME: Önceden yalnızca Bluetooth (ELM) taşıma durumuna bakıyordu -
+ * soket açık olsa bile ECU hiç yanıt vermiyor olabilirdi ("ELM Bağlı, ECU
+ * Yanıt Yok" durumu Ayarlar'da artık ayrı gösteriliyor). Nokta artık YEŞİL
+ * olmak için İKİSİNİN DE gerçekleşmesini ister - yalnızca ELM bağlıyken
+ * turuncu ("error" - kısmi bağlantı) gösterilir.
  */
 function bindConnectionStatusDot() {
   const dot = document.querySelector('.sda-status-dot');
@@ -182,12 +260,22 @@ function bindConnectionStatusDot() {
     return;
   }
 
-  onBluetoothStateChange((state) => {
-    const domState = state.status === 'connected'
-      ? (state.quality === 'weak' ? 'error' : 'connected')
-      : 'disconnected';
+  const update = () => {
+    const bt = getBluetoothState();
+    const ecu = getEcuStatus();
+
+    let domState = 'disconnected';
+    if (bt.status === 'connected' && ecu.status === 'connected' && bt.quality !== 'weak') {
+      domState = 'connected';
+    } else if (bt.status === 'connected' || bt.status === 'reconnecting') {
+      domState = 'error'; // ELM bağlı/deneniyor ama ECU henüz doğrulanmadı - kısmi durum.
+    }
     dot.setAttribute('data-state', domState);
-  });
+  };
+
+  onBluetoothStateChange(update);
+  onEcuStatusChange(update);
+  update();
 }
 
 /**
