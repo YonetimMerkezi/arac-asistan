@@ -24,6 +24,9 @@ const CATEGORY_TAGS = {
 
 /**
  * @typedef {Object} PoiResult
+ * @property {number|string|null} id - OSM node id (varsa) - bir istasyonu
+ *   tekil olarak tanımlamak için kullanılır (ör. kullanıcının elle marka
+ *   ataması, bkz. maps/station-brand-store.js).
  * @property {string} name
  * @property {string|null} brand - OSM "brand" etiketi (varsa) - akaryakıt
  *   istasyonlarını fiyat listesindeki markayla eşleştirmek için "name"den
@@ -51,6 +54,7 @@ export async function findNearbyPoi(category, lat, lon, radiusMeters = 5000) {
   return elements
     .filter((el) => typeof el.lat === 'number' && typeof el.lon === 'number')
     .map((el) => ({
+      id: el.id ?? null,
       name: el.name ?? defaultNameFor(category),
       brand: el.brand ?? null,
       lat: el.lat,
