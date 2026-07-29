@@ -201,8 +201,10 @@ function openGaugeStylePicker(pid, currentStyle, onSelect) {
       <button type="button" data-style-option="${option.value}" class="sda-card"
         style="display:flex; align-items:center; gap:12px; width:100%; text-align:left; border:none;
                ${option.value === currentStyle ? 'outline:2px solid var(--sda-accent);' : ''}">
-        <span style="width:64px; height:64px; flex-shrink:0; display:flex; align-items:center; justify-content:center; background:var(--sda-bg-elevated); border-radius:var(--sda-radius-sm);">
-          <sda-gauge value="65" min="0" max="100" size="sm" variant="${option.value}"></sda-gauge>
+        <span style="width:64px; height:64px; flex-shrink:0; display:flex; align-items:center; justify-content:center; background:var(--sda-bg-elevated); border-radius:var(--sda-radius-sm); overflow:hidden;">
+          <span style="display:block; transform:scale(0.45); transform-origin:center;">
+            <sda-gauge value="65" min="0" max="100" size="sm" variant="${option.value}"></sda-gauge>
+          </span>
         </span>
         <span class="sda-card__value" style="font-size:0.95rem;">${option.label}</span>
       </button>

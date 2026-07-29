@@ -27,6 +27,7 @@ import {
   startBackgroundService,
   stopBackgroundService,
 } from '../core/background-service.js';
+import { isKeepAwakeEnabled, setKeepAwakeEnabled } from '../core/keep-awake.js';
 import { createCorridor, listCorridors, deleteCorridor } from '../data/corridor-repository.js';
 import { refreshCorridors } from '../maps/average-speed-corridor.js';
 import { getEcuStatus, onEcuStatusChange } from '../obd/ecu-connection-store.js';
@@ -115,6 +116,16 @@ function render(container) {
       <button type="button" data-bg-service-toggle class="sda-nav-btn" style="width:100%; flex-direction:row; gap:8px;"></button>
     </div>
 
+    <h3 style="margin:4px 0;">Ekran</h3>
+    <div class="sda-card" style="margin-bottom:16px;">
+      <p class="sda-card__label">Ekran Açık Kalsın</p>
+      <p style="font-size:0.85rem; color:var(--sda-text-muted); margin:4px 0 12px;">
+        Açıksa, uygulama açıkken telefon ekranı kendiliğinden kararıp
+        kilitlenmez (pil tüketimini artırır).
+      </p>
+      <button type="button" data-keep-awake-toggle class="sda-nav-btn" style="width:100%; flex-direction:row; gap:8px;"></button>
+    </div>
+
     <h3 style="margin:4px 0;">Ortalama Hız Koridorları</h3>
     <form data-corridor-form class="sda-card" style="display:grid; gap:8px; margin-bottom:12px;">
       <input name="name" type="text" placeholder="Koridor adı" required style="padding:8px;">
@@ -133,6 +144,7 @@ function render(container) {
   renderDeviceSection(container);
   container.querySelector('[data-open-log]')?.addEventListener('click', openDiagnosticsLogModal);
   bindBackgroundServiceToggle(container);
+  bindKeepAwakeToggle(container);
   bindCorridorForm(container);
   void renderCorridorList(container);
 }
@@ -241,6 +253,28 @@ function bindBackgroundServiceToggle(container) {
       const started = await startBackgroundService();
       updateLabel(started);
     }
+  });
+}
+
+/**
+ * @param {HTMLElement} container
+ */
+function bindKeepAwakeToggle(container) {
+  const button = container.querySelector('[data-keep-awake-toggle]');
+  if (!button) return;
+
+  const updateLabel = (enabled) => {
+    const icon = iconMarkup(enabled ? 'done' : 'bolt', { size: 20 });
+    const text = enabled ? 'Açık (kapatmak için dokun)' : 'Kapalı (açmak için dokun)';
+    button.innerHTML = `${icon}<span>${text}</span>`;
+  };
+
+  updateLabel(isKeepAwakeEnabled());
+
+  button.addEventListener('click', async () => {
+    const next = !isKeepAwakeEnabled();
+    await setKeepAwakeEnabled(next);
+    updateLabel(next);
   });
 }
 
