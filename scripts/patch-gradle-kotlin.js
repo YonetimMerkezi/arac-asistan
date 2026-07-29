@@ -99,6 +99,59 @@ tasks.withType(org.jetbrains.kotlin.gradle.tasks.KotlinCompile).configureEach {
   console.log('[patch-gradle-kotlin] Kotlin JVM hedefi 17 olarak ayarlandı (Java ile eşleşsin diye).');
 }
 
+/**
+ * DÜZELTME (kritik hata): Önceki sürüm yalnızca ~/.android/debug.keystore
+ * dosyasını yazıp, Android Gradle Plugin'in bunu KENDİLİĞİNDEN (varsayılan
+ * debug signing config olarak) kullanacağını VARSAYIYORDU - bu varsayım
+ * HİÇ DOĞRULANMADI. Kullanıcı defalarca "paket çakışıyor" hatası almaya
+ * devam etti - yani üretilen APK'lar hâlâ FARKLI sertifikalarla
+ * imzalanıyor olabilir. Artık signingConfig AÇIKÇA build.gradle'a
+ * yazılıyor - varsayıma yer bırakmıyor.
+ */
+function patchDebugSigningConfig() {
+  let content = readFileSync(APP_GRADLE, 'utf8');
+  if (content.includes('signingConfigs')) {
+    console.log('[patch-gradle-kotlin] signingConfigs zaten mevcut.');
+    return;
+  }
+
+  const withSigningConfig = content.replace(
+    /(android\s*\{)/,
+    `$1
+    signingConfigs {
+        debug {
+            storeFile file(System.getProperty("user.home") + "/.android/debug.keystore")
+            storePassword "android"
+            keyAlias "androiddebugkey"
+            keyPassword "android"
+        }
+    }`,
+  );
+
+  if (withSigningConfig === content) {
+    throw new Error('[patch-gradle-kotlin] android/app/build.gradle içinde "android {" açılışı bulunamadı.');
+  }
+  content = withSigningConfig;
+
+  if (/buildTypes\s*\{[^}]*debug\s*\{/s.test(content)) {
+    content = content.replace(
+      /(buildTypes\s*\{[^}]*debug\s*\{)/s,
+      `$1\n            signingConfig signingConfigs.debug`,
+    );
+  } else {
+    content = content.replace(
+      /(buildTypes\s*\{)/,
+      `$1
+    debug {
+        signingConfig signingConfigs.debug
+    }`,
+    );
+  }
+
+  writeFileSync(APP_GRADLE, content, 'utf8');
+  console.log('[patch-gradle-kotlin] Debug signingConfig AÇIKÇA eklendi (~/.android/debug.keystore, artık varsayıma dayanmıyor).');
+}
+
 function removeDuplicateJavaMainActivity() {
   if (existsSync(JAVA_MAIN_ACTIVITY)) {
     unlinkSync(JAVA_MAIN_ACTIVITY);
@@ -111,5 +164,6 @@ function removeDuplicateJavaMainActivity() {
 patchProjectGradle();
 patchAppGradle();
 patchKotlinJvmTarget();
+patchDebugSigningConfig();
 removeDuplicateJavaMainActivity();
 console.log('[patch-gradle-kotlin] Kotlin desteği başarıyla eklendi.');

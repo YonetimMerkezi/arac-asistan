@@ -124,6 +124,17 @@ jobs:
           chmod +x gradlew
           ./gradlew assembleDebug --no-daemon
 
+      - name: KESİN DOĞRULAMA - üretilen APK'nın GERÇEK imzasını göster
+        # Önceki adımlar yalnızca "biz bu keystore dosyasını yazdık" ve
+        # "build.gradle'a bu ayarı ekledik" diyordu - ama Gradle'ın bunu
+        # GERÇEKTEN kullanıp kullanmadığını hiçbir adım DOĞRULAMIYORDU.
+        # Bu adım, ÜRETİLEN APK dosyasının içine gömülü GERÇEK imzalama
+        # sertifikasını doğrudan okur - varsayıma yer bırakmaz.
+        run: |
+          APK_PATH="android/app/build/outputs/apk/debug/app-debug.apk"
+          echo "=== APK'nın GERÇEK imza sertifikası (aşağıdaki SHA256, referans parmak iziyle AYNI olmalı) ==="
+          keytool -printcert -jarfile "$APK_PATH" | grep -A1 "SHA256:"
+
       - name: APK'yı yükle (indirilebilir artifact)
         uses: actions/upload-artifact@v4
         with:
