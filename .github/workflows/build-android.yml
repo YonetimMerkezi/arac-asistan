@@ -90,9 +90,6 @@ jobs:
           mkdir -p android/app/src/main/java/com/sedat/smartdriveai
           cp /tmp/custom-android/smartdriveai/*.kt android/app/src/main/java/com/sedat/smartdriveai/
 
-      - name: Kotlin desteğini etkinleştir
-        run: node scripts/patch-gradle-kotlin.js
-
       - name: Uygulama ikonu / bildirim ikonu / açılış ekranını yerleştir
         run: |
           if [ -d "assets/android-res" ]; then
@@ -112,11 +109,23 @@ jobs:
             echo "assets/android-res bulunamadı, Capacitor'ün varsayılan ikonu kullanılacak."
           fi
 
-      - name: İzinleri ve servis kaydını manifest'e ekle
-        run: node scripts/patch-manifest.js
-
       - name: Web varlıklarını Android projesine senkronize et
         run: npx cap sync android
+
+      - name: Kotlin desteğini etkinleştir
+        # DÜZELTME (kritik hata): Bu adım ÖNCEDEN "cap sync"ten ÖNCE
+        # çalışıyordu - kullanıcı imzalama sorununun hâlâ devam ettiğini
+        # (üretilen APK'nın sertifikası referansla HİÇ eşleşmiyordu)
+        # bildirdiğinde, "cap sync"in build.gradle'ı bir şekilde
+        # değiştirip/üzerine yazıp bizim signingConfig eklememizi
+        # silmiş olabileceği ortaya çıktı. Artık bu yama "cap sync"ten
+        # SONRA, Gradle derlemesinden HEMEN ÖNCE çalışıyor - böylece
+        # ne olursa olsun bizim ayarımız SON SÖZ oluyor.
+        run: node scripts/patch-gradle-kotlin.js
+
+      - name: İzinleri ve servis kaydını manifest'e ekle
+        # Aynı nedenle bu da "cap sync"ten SONRAya taşındı.
+        run: node scripts/patch-manifest.js
 
       - name: Gradle ile APK derle (debug)
         working-directory: android
