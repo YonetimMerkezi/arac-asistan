@@ -11,6 +11,7 @@ import { addMaintenanceItem, listMaintenanceItems } from '../data/maintenance-re
 import { getEstimatedOdometerKm } from '../fuel/odometer-estimator.js';
 import { renderFuelPriceChart } from '../charts/fuel-chart.js';
 import { getFuelStationCache, onFuelStationCacheUpdate } from '../maps/fuel-station-cache.js';
+import { consumePendingFuelSelection } from '../core/pending-fuel-selection.js';
 import { logWarn } from '../core/logger.js';
 
 /** @type {{value: string, label: string}[]} Bakım kalemi türleri (spesifikasyondaki liste). */
@@ -119,6 +120,23 @@ function populateStationSelect(container) {
   });
   select.addEventListener('change', recalcAmount);
   litersInput.addEventListener('input', recalcAmount);
+
+  // Harita/İstasyon ekranındaki "Yakıt Al" düğmesinden gelen bekleyen bir
+  // seçim varsa (bkz. core/pending-fuel-selection.js), yakıt türünü ve
+  // istasyonu ONA göre önceden seçip birim fiyatı hemen uygular - kullanıcı
+  // yalnızca litre girip Kaydet'e basar.
+  const pending = consumePendingFuelSelection();
+  if (pending) {
+    if (fuelTypeSelect) fuelTypeSelect.value = pending.fuelType;
+    eligibleStations = rebuildOptions();
+    const matchIndex = eligibleStations.findIndex(
+      (s) => s.dagitici.toLocaleLowerCase('tr') === pending.brand.toLocaleLowerCase('tr'),
+    );
+    if (matchIndex !== -1) {
+      select.value = String(matchIndex);
+      recalcAmount();
+    }
+  }
 
   // Önbellek arka planda tazelendiğinde (periyodik/konum değişimi) listeyi
   // sessizce güncel tut - kullanıcı formu açık bırakmış olsa bile.

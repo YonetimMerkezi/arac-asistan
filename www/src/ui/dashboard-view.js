@@ -20,6 +20,7 @@
  */
 
 import '../ui/components/gauge.js';
+import { openModal } from './components/modal.js';
 import { iconMarkup } from './icons.js';
 import { queryPid } from '../obd/elm327.js';
 import { WIDGET_REGISTRY, getWidgetDefinition } from '../obd/widget-registry.js';
@@ -32,6 +33,7 @@ import {
   getDashboardConfig,
   setDashboardWidgets,
   setWidgetColor,
+  setWidgetStyle,
   onDashboardConfigChange,
 } from '../core/dashboard-config-store.js';
 import { logWarn } from '../core/logger.js';
@@ -41,6 +43,14 @@ const POLL_INTERVAL_MS = 300;
 
 /** @type {number[]} Renk seçici için sunulan ön ayar tonlar (0-360). */
 const COLOR_PRESETS = [28, 4, 48, 142, 199, 291, 335, 0];
+
+/** @type {{value: 'arc'|'needle'|'digital'|'bar', label: string}[]} Seçilebilir gösterge tipleri - bkz. ui/components/gauge.js. */
+const GAUGE_STYLE_OPTIONS = [
+  { value: 'arc', label: 'Yay (Modern)' },
+  { value: 'needle', label: 'Kadran (İbreli)' },
+  { value: 'digital', label: 'Dijital Gösterge' },
+  { value: 'bar', label: 'Bar Göstergesi' },
+];
 
 /** @type {boolean} Poll döngüsünün aktif olup olmadığı (bağlantı koptuğunda durdurulur). */
 let pollingActive = false;
@@ -154,6 +164,7 @@ function renderNormalMode(content) {
     gauge.setAttribute('min', String(minDisplay.value));
     gauge.setAttribute('max', String(maxDisplay.value));
     gauge.setAttribute('size', isPrimary ? 'lg' : 'sm');
+    gauge.setAttribute('variant', instance.gaugeStyle ?? 'arc');
     gauge.setAttribute('value', String(minDisplay.value));
     if (def.dangerAbove !== undefined) {
       gauge.setAttribute('danger-above', String(convertForDisplay(def, def.dangerAbove).value));
@@ -222,6 +233,9 @@ function renderEditMode(content) {
               </button>
             `).join('')}
           </div>
+          <button type="button" data-open-style-picker="${def.pid}" class="sda-btn sda-btn--ghost" style="margin-top:6px; padding:4px 0; font-size:0.75rem;">
+            ${iconMarkup('palette', { size: 16 })} Gösterge Tipi: ${gaugeStyleLabel(instance.gaugeStyle)}
+          </button>
         ` : ''}
       </div>
     `;
@@ -240,7 +254,7 @@ function bindEditModeEvents(list) {
       const config = getDashboardConfig();
 
       const nextWidgets = checkbox.checked
-        ? [...config.widgets, { pid, colorHue: null }]
+        ? [...config.widgets, { pid, colorHue: null, gaugeStyle: null }]
         : config.widgets.filter((w) => w.pid !== pid);
 
       await setDashboardWidgets(nextWidgets);
@@ -270,6 +284,62 @@ function bindEditModeEvents(list) {
       renderEditMode(list.parentElement);
     });
   });
+
+  list.querySelectorAll('[data-open-style-picker]').forEach((button) => {
+    button.addEventListener('click', () => {
+      const pid = button.getAttribute('data-open-style-picker');
+      const config = getDashboardConfig();
+      const instance = config.widgets.find((w) => w.pid === pid);
+      openGaugeStylePicker(pid, instance?.gaugeStyle ?? 'arc', async (style) => {
+        await setWidgetStyle(pid, style);
+        renderEditMode(list.parentElement);
+      });
+    });
+  });
+}
+
+/**
+ * @param {'arc'|'needle'|'digital'|'bar'|null|undefined} style
+ * @returns {string}
+ */
+function gaugeStyleLabel(style) {
+  return GAUGE_STYLE_OPTIONS.find((o) => o.value === (style ?? 'arc'))?.label ?? 'Yay (Modern)';
+}
+
+/**
+ * "Gösterge tipi seçiniz" alt sayfasını açar - her seçenek küçük, CANLI bir
+ * <sda-gauge> önizlemesiyle (örnek %65 dolulukta) listelenir, tıklanan
+ * seçenek hemen kaydedilir ve alt sayfa kapanır.
+ * @param {string} pid
+ * @param {'arc'|'needle'|'digital'|'bar'} currentStyle
+ * @param {(style: 'arc'|'needle'|'digital'|'bar') => void} onSelect
+ */
+function openGaugeStylePicker(pid, currentStyle, onSelect) {
+  const bodyHtml = `
+    <div data-style-list style="display:flex; flex-direction:column; gap:8px;"></div>
+  `;
+
+  openModal({ title: 'Gösterge Tipi Seçiniz', bodyHtml, onMount: (body) => {
+    const list = body.querySelector('[data-style-list]');
+    if (!list) return;
+
+    list.innerHTML = GAUGE_STYLE_OPTIONS.map((option) => `
+      <button type="button" data-style-option="${option.value}" class="sda-card"
+        style="display:flex; align-items:center; gap:12px; width:100%; text-align:left; border:none;
+               ${option.value === currentStyle ? 'outline:2px solid var(--sda-accent);' : ''}">
+        <span style="width:64px; height:64px; flex-shrink:0; display:flex; align-items:center; justify-content:center; background:var(--sda-bg-elevated); border-radius:var(--sda-radius-sm);">
+          <sda-gauge value="65" min="0" max="100" size="sm" variant="${option.value}"></sda-gauge>
+        </span>
+        <span class="sda-card__value" style="font-size:0.95rem;">${option.label}</span>
+      </button>
+    `).join('');
+
+    list.querySelectorAll('[data-style-option]').forEach((row) => {
+      row.addEventListener('click', () => {
+        onSelect(row.getAttribute('data-style-option'));
+      });
+    });
+  } });
 }
 
 /**
