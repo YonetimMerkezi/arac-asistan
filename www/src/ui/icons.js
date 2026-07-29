@@ -45,6 +45,7 @@ const ICON_MAP = {
   'mic-off': 'mic_off',
   location: 'my_location',
   navigation: 'navigation',
+  'speed-camera': 'photo_camera',
 
   // Tema
   'theme-light': 'light_mode',

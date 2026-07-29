@@ -29,6 +29,7 @@ import {
 } from '../core/background-service.js';
 import { createCorridor, listCorridors, deleteCorridor } from '../data/corridor-repository.js';
 import { refreshCorridors } from '../maps/average-speed-corridor.js';
+import { getEcuStatus, onEcuStatusChange } from '../obd/ecu-connection-store.js';
 import { openDiagnosticsLogModal } from './diagnostics-log-view.js';
 import { logWarn } from '../core/logger.js';
 
@@ -45,6 +46,7 @@ export function initSettingsView() {
   render(container);
 
   onBluetoothStateChange(() => renderDeviceSection(container));
+  onEcuStatusChange(() => renderDeviceSection(container));
 }
 
 /**
@@ -252,11 +254,23 @@ function renderDeviceSection(container) {
   const state = getBluetoothState();
 
   if (state.status === 'connected') {
+    const ecu = getEcuStatus();
     section.innerHTML = `
       <div class="sda-card">
         <p class="sda-card__label">Bağlı cihaz</p>
         <p class="sda-card__value" style="font-size:1rem;">${state.deviceName ?? state.deviceAddress}</p>
-        <button type="button" data-disconnect class="sda-nav-btn" style="margin-top:8px; background:var(--sda-danger-soft);">Bağlantıyı Kes</button>
+
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-top:12px;">
+          <span class="sda-card__label">ELM Bağlantısı</span>
+          <span style="color:var(--sda-success); font-weight:600;">Bağlandı</span>
+        </div>
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-top:4px;">
+          <span class="sda-card__label">ECU Bağlantısı</span>
+          <span style="color:${ecuStatusColor(ecu.status)}; font-weight:600;">${ecuStatusLabel(ecu.status)}</span>
+        </div>
+        ${ecu.hint ? `<p class="sda-card__label" style="margin-top:6px; color:var(--sda-warning);">${ecu.hint}</p>` : ''}
+
+        <button type="button" data-disconnect class="sda-nav-btn" style="margin-top:12px; background:var(--sda-danger-soft);">Bağlantıyı Kes</button>
       </div>
     `;
     section.querySelector('[data-disconnect]')?.addEventListener('click', () => disconnectBluetooth());
@@ -281,6 +295,25 @@ function renderDeviceSection(container) {
   }
 
   updateConnectStatusLine(section, state);
+}
+
+/**
+ * @param {import('../obd/ecu-connection-store.js').EcuStatus} status
+ * @returns {string}
+ */
+function ecuStatusLabel(status) {
+  const labels = { idle: 'Beklemede', handshaking: 'Bağlanıyor', connected: 'Bağlandı', failed: 'Yanıt Yok' };
+  return labels[status] ?? status;
+}
+
+/**
+ * @param {import('../obd/ecu-connection-store.js').EcuStatus} status
+ * @returns {string}
+ */
+function ecuStatusColor(status) {
+  if (status === 'connected') return 'var(--sda-success)';
+  if (status === 'failed') return 'var(--sda-danger)';
+  return 'var(--sda-warning)'; // idle/handshaking
 }
 
 /**
