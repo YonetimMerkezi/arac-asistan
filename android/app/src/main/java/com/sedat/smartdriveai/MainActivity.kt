@@ -19,6 +19,7 @@ class MainActivity : BridgeActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         registerPlugin(BluetoothClassicPlugin::class.java)
         registerPlugin(BackgroundServicePlugin::class.java)
+        registerPlugin(AppLauncherPlugin::class.java)
         super.onCreate(savedInstanceState)
     }
 }
