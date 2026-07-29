@@ -20,7 +20,19 @@ import { logError, logInfo } from './logger.js';
 /** @type {string} Preferences deposunda kullanılan anahtar. */
 const STORAGE_KEY = 'sda_theme_settings';
 
-/** @typedef {'dark'|'light'|'system'} ThemeMode */
+/** @typedef {'dark'|'light'|'system'|'auto'} ThemeMode */
+
+/** @type {number} Bu saatten (dahil) itibaren koyu temaya geçilir ("auto" modunda). */
+const AUTO_DARK_START_HOUR = 19;
+
+/** @type {number} Bu saatten (dahil) itibaren açık temaya geçilir ("auto" modunda). */
+const AUTO_LIGHT_START_HOUR = 7;
+
+/** @type {number} "auto" modunda saatin yeniden kontrol edilme sıklığı (ms). */
+const AUTO_CHECK_INTERVAL_MS = 5 * 60 * 1000;
+
+/** @type {ReturnType<typeof setInterval>|null} */
+let autoModeInterval = null;
 
 /**
  * @typedef {Object} ThemeSettings
@@ -48,9 +60,13 @@ function applyToDocument(settings) {
 
   if (settings.mode === 'system') {
     root.removeAttribute('data-theme');
+  } else if (settings.mode === 'auto') {
+    root.setAttribute('data-theme', isNighttimeNow() ? 'dark' : 'light');
   } else {
     root.setAttribute('data-theme', settings.mode);
   }
+
+  manageAutoModeInterval(settings.mode);
 
   const pkg = getThemePackage(settings.packageId);
   root.setAttribute('data-style', pkg.styleId);
@@ -62,6 +78,39 @@ function applyToDocument(settings) {
 
   root.style.setProperty('--sda-accent-hue', String(accentHue));
   root.style.setProperty('--sda-accent-hue-2', String(accentHue2));
+}
+
+/**
+ * @returns {boolean} Şu an "gece" sayılan saat aralığında mıyız (auto mod için).
+ */
+function isNighttimeNow() {
+  const hour = new Date().getHours();
+  return hour >= AUTO_DARK_START_HOUR || hour < AUTO_LIGHT_START_HOUR;
+}
+
+/**
+ * "auto" modu aktifken saat değişimini periyodik kontrol eden zamanlayıcıyı
+ * kurar/kaldırır - yalnızca mod "auto" iken çalışır, gereksiz yere sürekli
+ * dönmez.
+ * @param {ThemeMode} mode
+ */
+function manageAutoModeInterval(mode) {
+  if (autoModeInterval) {
+    clearInterval(autoModeInterval);
+    autoModeInterval = null;
+  }
+
+  if (mode !== 'auto') return;
+
+  autoModeInterval = setInterval(() => {
+    const root = document.documentElement;
+    const shouldBeDark = isNighttimeNow();
+    const isDark = root.getAttribute('data-theme') === 'dark';
+    if (shouldBeDark !== isDark) {
+      root.setAttribute('data-theme', shouldBeDark ? 'dark' : 'light');
+      logInfo('theme-manager', `Otomatik tema geçişi: ${shouldBeDark ? 'koyu' : 'açık'}`);
+    }
+  }, AUTO_CHECK_INTERVAL_MS);
 }
 
 /**

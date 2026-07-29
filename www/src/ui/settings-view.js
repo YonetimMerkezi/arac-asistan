@@ -22,7 +22,7 @@ import {
   onStateChange as onBluetoothStateChange,
 } from '../bluetooth/bluetooth-manager.js';
 import { getLastPosition } from '../core/gps-tracker.js';
-import { bindBackgroundServiceToggle, bindKeepAwakeToggle, bindOwnerNameInput } from './settings-preferences-panel.js';
+import { bindBackgroundServiceToggle, bindKeepAwakeToggle, bindOwnerNameInput, bindBootNotificationToggle } from './settings-preferences-panel.js';
 import { createCorridor, listCorridors, deleteCorridor } from '../data/corridor-repository.js';
 import { refreshCorridors } from '../maps/average-speed-corridor.js';
 import { getEcuStatus, onEcuStatusChange } from '../obd/ecu-connection-store.js';
@@ -61,6 +61,7 @@ function render(container) {
         <button type="button" data-theme="system" class="sda-nav-btn">Sistem</button>
         <button type="button" data-theme="dark" class="sda-nav-btn">Koyu</button>
         <button type="button" data-theme="light" class="sda-nav-btn">Açık</button>
+        <button type="button" data-theme="auto" class="sda-nav-btn">Otomatik (Gündüz/Gece)</button>
       </div>
     </div>
 
@@ -111,6 +112,17 @@ function render(container) {
       <button type="button" data-bg-service-toggle class="sda-nav-btn" style="width:100%; flex-direction:row; gap:8px;"></button>
     </div>
 
+    <div class="sda-card" style="margin-bottom:16px;">
+      <p class="sda-card__label">Telefon Açılışında Bildirim</p>
+      <p style="font-size:0.85rem; color:var(--sda-text-muted); margin:4px 0 12px;">
+        Açıksa, telefon her açıldığında "Araca bağlanmak için dokunun"
+        bildirimi gösterilir - uygulamayı aramanıza gerek kalmaz, tek
+        dokunuşla açılır. (Android kısıtlamaları nedeniyle tamamen
+        dokunmadan, kendiliğinden açılamıyor.)
+      </p>
+      <button type="button" data-boot-notification-toggle class="sda-nav-btn" style="width:100%; flex-direction:row; gap:8px;"></button>
+    </div>
+
     <h3 style="margin:4px 0;">Ekran</h3>
     <div class="sda-card" style="margin-bottom:16px;">
       <p class="sda-card__label">Ekran Açık Kalsın</p>
@@ -151,6 +163,7 @@ function render(container) {
   bindBackgroundServiceToggle(container);
   bindKeepAwakeToggle(container);
   bindOwnerNameInput(container);
+  bindBootNotificationToggle(container);
   bindCorridorForm(container);
   void renderCorridorList(container);
 }

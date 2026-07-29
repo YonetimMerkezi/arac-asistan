@@ -31,6 +31,8 @@ const STORAGE_KEY = 'sda_background_service_enabled';
  * @property {(opts: {statusText: string}) => Promise<{started: boolean}>} start
  * @property {(opts: {statusText: string}) => Promise<void>} updateStatus
  * @property {() => Promise<void>} stop
+ * @property {(opts: {enabled: boolean}) => Promise<void>} setAutoStartOnBoot
+ * @property {() => Promise<{enabled: boolean}>} isAutoStartOnBoot
  */
 
 /** @type {BackgroundServicePluginInterface} */
@@ -117,4 +119,28 @@ export async function stopBackgroundService() {
  */
 export function isBackgroundServiceRunning() {
   return isRunning;
+}
+
+/**
+ * Telefon açılışında "Bağlanmak için dokun" bildiriminin gösterilip
+ * gösterilmeyeceğini ayarlar (bkz. BootReceiver.kt - native tarafta).
+ *
+ * DÜRÜSTLÜK NOTU: Bu, uygulamayı TAMAMEN GÖRÜNMEZ şekilde otomatik açıp
+ * bağlamaz - Android'in arka plan aktivite başlatma kısıtlamaları bunu
+ * güvenilir şekilde imkansız kılıyor. Açıksa, telefon açılışında tek
+ * dokunuşla uygulamayı açan bir bildirim gösterilir - "uygulamayı aramak"
+ * yerine "bildirime dokunmak" yeterli olur.
+ * @param {boolean} enabled
+ * @returns {Promise<void>}
+ */
+export async function setBootNotificationEnabled(enabled) {
+  await BackgroundService.setAutoStartOnBoot({ enabled });
+}
+
+/**
+ * @returns {Promise<boolean>}
+ */
+export async function isBootNotificationEnabled() {
+  const { enabled } = await BackgroundService.isAutoStartOnBoot();
+  return enabled;
 }

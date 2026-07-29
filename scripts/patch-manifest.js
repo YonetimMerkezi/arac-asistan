@@ -35,6 +35,7 @@ const REQUIRED_PERMISSIONS = [
   '    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_CONNECTED_DEVICE" />',
   '    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />',
   '    <uses-permission android:name="android.permission.WAKE_LOCK" />',
+  '    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />',
 ];
 
 /** @type {string} <application> içine (arka plan servisi) eklenecek servis kaydı. */
@@ -43,6 +44,14 @@ const SERVICE_DECLARATION = `        <service
             android:enabled="true"
             android:exported="false"
             android:foregroundServiceType="connectedDevice" />
+        <receiver
+            android:name=".BootReceiver"
+            android:enabled="true"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="android.intent.action.BOOT_COMPLETED" />
+            </intent-filter>
+        </receiver>
 `;
 
 /** @type {string[]} AppLauncherPlugin'in "yüklü mü" kontrolü/başlatma yapabilmesi için

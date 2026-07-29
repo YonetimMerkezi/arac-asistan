@@ -15,6 +15,8 @@ import {
   isBackgroundServiceEnabled,
   startBackgroundService,
   stopBackgroundService,
+  setBootNotificationEnabled,
+  isBootNotificationEnabled,
 } from '../core/background-service.js';
 import { isKeepAwakeEnabled, setKeepAwakeEnabled } from '../core/keep-awake.js';
 import { getOwnerName, setOwnerName } from '../core/owner-name-store.js';
@@ -81,5 +83,32 @@ export function bindOwnerNameInput(container) {
   // yazma işlemini önler.
   input.addEventListener('blur', () => {
     void setOwnerName(input.value);
+  });
+}
+
+/**
+ * Telefon açılışında "bağlanmak için dokun" bildirimi anahtarını bağlar.
+ * DÜRÜSTLÜK: Bu, tam sessiz/görünmez otomatik başlatma DEĞİLDİR (Android
+ * kısıtlamaları nedeniyle güvenilir şekilde yapılamıyor) - açılışta tek
+ * dokunuşla açılan bir bildirim gösterir.
+ * @param {HTMLElement} container
+ */
+export function bindBootNotificationToggle(container) {
+  const button = container.querySelector('[data-boot-notification-toggle]');
+  if (!button) return;
+
+  const updateLabel = (enabled) => {
+    const icon = iconMarkup(enabled ? 'done' : 'bolt', { size: 20 });
+    const text = enabled ? 'Açık (kapatmak için dokun)' : 'Kapalı (açmak için dokun)';
+    button.innerHTML = `${icon}<span>${text}</span>`;
+  };
+
+  void isBootNotificationEnabled().then(updateLabel);
+
+  button.addEventListener('click', async () => {
+    const current = await isBootNotificationEnabled();
+    const next = !current;
+    await setBootNotificationEnabled(next);
+    updateLabel(next);
   });
 }

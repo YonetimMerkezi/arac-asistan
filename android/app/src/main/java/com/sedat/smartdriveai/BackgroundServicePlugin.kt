@@ -80,4 +80,23 @@ class BackgroundServicePlugin : Plugin() {
         context.stopService(Intent(context, SmartDriveForegroundService::class.java))
         call.resolve()
     }
+
+    /**
+     * Telefon açılışında "Bağlanmak için dokun" bildiriminin gösterilip
+     * gösterilmeyeceğini ayarlar (bkz. BootReceiver.kt, BootPreference.kt).
+     * Varsayılan KAPALI - kullanıcı Ayarlar'dan açıkça açmalı.
+     */
+    @PluginMethod
+    fun setAutoStartOnBoot(call: PluginCall) {
+        val enabled = call.getBoolean("enabled") ?: return call.reject("enabled zorunlu")
+        BootPreference.setAutoStartEnabled(context, enabled)
+        call.resolve()
+    }
+
+    @PluginMethod
+    fun isAutoStartOnBoot(call: PluginCall) {
+        val result = JSObject()
+        result.put("enabled", BootPreference.isAutoStartEnabled(context))
+        call.resolve(result)
+    }
 }
