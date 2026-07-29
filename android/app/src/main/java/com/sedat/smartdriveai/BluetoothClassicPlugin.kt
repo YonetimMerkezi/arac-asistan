@@ -60,6 +60,24 @@ class BluetoothClassicPlugin : Plugin() {
     private var outputStream: OutputStream? = null
     private val executor: ExecutorService = Executors.newSingleThreadExecutor()
 
+    /**
+     * Okuma dongusu icin AYRI, ozel bir thread (executor'dan BAGIMSIZ).
+     *
+     * KRITIK HATA (bulundu ve duzeltildi): Onceki surumde startReadLoop()
+     * sonsuz dongusunu de write()/connect() ile AYNI tek-thread'li
+     * `executor`'a gonderiyordu. `stream.read()` cagrisi BLOKE EDICI
+     * oldugu icin, okuma dongusu baslar baslamaz o TEK thread'i SONSUZA
+     * KADAR isgal ediyordu - bu yuzden write()'in kendi `executor.execute`
+     * gorevi kuyrukta SONSUZA KADAR bekleyip HICBIR ZAMAN calismiyordu.
+     * Sonuc: ELM327'ye gonderilen HER komut (ATZ dahil) gercekte ADAPTORE
+     * HIC ULASMIYORDU - JS tarafindaki "yanit vermedi" hatalari aslinda
+     * adaptorun sessiz kalmasi degil, verinin native katmanda hic
+     * gonderilmemis olmasiydi. Cozum: okuma donguse KENDI thread'ini
+     * verip `executor`'u yalniz kisa omurlu gorevler (write/connect/
+     * disconnect) icin serbest birakmak.
+     */
+    private var readThread: Thread? = null
+
     @Volatile
     private var readLoopActive = false
 
@@ -270,7 +288,7 @@ class BluetoothClassicPlugin : Plugin() {
      */
     private fun startReadLoop() {
         readLoopActive = true
-        executor.execute {
+        readThread = Thread {
             val buffer = ByteArray(1024)
             while (readLoopActive) {
                 try {
@@ -298,6 +316,8 @@ class BluetoothClassicPlugin : Plugin() {
                 }
             }
         }
+        readThread?.name = "BluetoothClassicReadLoop"
+        readThread?.start()
     }
 
     /**
