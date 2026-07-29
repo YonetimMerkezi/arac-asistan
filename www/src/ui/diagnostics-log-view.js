@@ -40,7 +40,7 @@ export function openDiagnosticsLogModal() {
     <div data-log-list style="display:flex; flex-direction:column-reverse; gap:6px; font-family:var(--sda-font-display); font-size:0.7rem;"></div>
   `;
 
-  const { root } = openModal({ title: 'Bağlantı Günlüğü', bodyHtml, onMount: (body) => {
+  openModal({ title: 'Bağlantı Günlüğü', bodyHtml, onMount: (body, { root }) => {
     const listEl = body.querySelector('[data-log-list]');
     renderEntries(listEl, getLogs());
 
