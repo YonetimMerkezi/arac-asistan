@@ -30,6 +30,11 @@ const PROMPT_CHAR = '>';
  * @property {(response: string) => void} resolve
  * @property {(error: Error) => void} reject
  * @property {ReturnType<typeof setTimeout>} timeoutHandle
+ * @property {number} enqueuedAt - Bu komutun sıraya EKLENDİĞİ an (ms).
+ * @property {number|null} sentAt - Bu komutun GERÇEKTEN telden gönderildiği an
+ *   (ms) - null ise henüz hiç gönderilmedi (kuyrukta bekliyor ya da süresi
+ *   kuyrukta beklerken doldu). Zaman aşımı teşhisinde "hiç gönderilemedi mi,
+ *   yoksa gönderildi de yanıt mı gelmedi" ayrımını yapmak için gerekli.
  */
 
 /** @type {QueuedCommand[]} */
@@ -78,8 +83,10 @@ export function detachElm327Transport() {
  */
 export function sendCommand(command) {
   return new Promise((resolve, reject) => {
-    const timeoutHandle = setTimeout(() => {
-      const index = queue.findIndex((c) => c.timeoutHandle === timeoutHandle);
+    const entry = { command, resolve, reject, timeoutHandle: null, enqueuedAt: Date.now(), sentAt: null };
+
+    entry.timeoutHandle = setTimeout(() => {
+      const index = queue.findIndex((c) => c.timeoutHandle === entry.timeoutHandle);
       if (index === -1) return; // Bu arada yanıt geldi ve zaten çözüldü - iptal.
 
       // KRİTİK DÜZELTME: Bu komutun kuyruğun BAŞINDA olup olmadığını (yani şu
@@ -97,11 +104,22 @@ export function sendCommand(command) {
       queue.splice(index, 1);
       if (wasCurrentlyProcessing) processing = false;
 
+      // TEŞHİS: "hiç gönderilemedi" (kuyrukta beklerken süresi doldu - kuyruk
+      // tıkanıklığı belirtisi) ile "gönderildi ama yanıt gelmedi" (adaptör/araç
+      // sessiz kaldı) birbirinden AYRI sorunlardır - hangisi olduğunu net görmek
+      // için ayrı loglanır.
+      const waitedMs = Date.now() - entry.enqueuedAt;
+      if (entry.sentAt === null) {
+        logWarn('elm327', `Zaman aşımı (HİÇ GÖNDERİLEMEDİ - kuyrukta ${waitedMs}ms bekledi): ${command}`);
+      } else {
+        logWarn('elm327', `Zaman aşımı (gönderildi, yanıt gelmedi, ${waitedMs}ms): ${command}`);
+      }
+
       reject(new Error(`Zaman aşımı: ${command}`));
       processQueue();
     }, COMMAND_TIMEOUT_MS);
 
-    queue.push({ command, resolve, reject, timeoutHandle });
+    queue.push(entry);
     processQueue();
   });
 }
@@ -115,6 +133,16 @@ function processQueue() {
 
   processing = true;
   const next = queue[0];
+  next.sentAt = Date.now();
+
+  // TEŞHİS: kuyruk derinliği görünür olmalı - "PID okunamadı" şikayetlerinin
+  // kuyruk tıkanıklığından mı (birden fazla modül aynı anda sorgu kuyruklıyor)
+  // yoksa adaptörün kendisinin mi yavaş/sessiz kaldığından kaynaklandığını
+  // ayırt etmek için.
+  const waitedMs = next.sentAt - next.enqueuedAt;
+  if (waitedMs > 500 || queue.length > 1) {
+    logInfo('elm327', `Gönderiliyor: ${next.command} (kuyrukta ${waitedMs}ms bekledi, kuyruk derinliği: ${queue.length})`);
+  }
 
   sendRaw(`${next.command}\r`).catch((error) => {
     logError('elm327', `Komut gönderilemedi: ${next.command}`, error);
@@ -149,6 +177,15 @@ function handleIncomingChunk(chunk) {
 
   clearTimeout(current.timeoutHandle);
   const cleaned = rawResponse.replace(/\r/g, '\n').trim();
+
+  // TEŞHİS: önceden yalnızca BAŞARISIZLIKLAR loglanıyordu - başarı oranını
+  // görmenin tek yolu, günlükte "yok"luğu yorumlamaktı. Yavaş (>1s) yanıtlar
+  // özellikle kuyruk/adaptör gecikmesini teşhis etmek için loglanır.
+  const roundTripMs = Date.now() - (current.sentAt ?? current.enqueuedAt);
+  if (roundTripMs > 1000) {
+    logInfo('elm327', `Yanıt geldi (${roundTripMs}ms sürdü): ${current.command} -> "${cleaned.slice(0, 40)}"`);
+  }
+
   current.resolve(cleaned);
   processQueue();
 }

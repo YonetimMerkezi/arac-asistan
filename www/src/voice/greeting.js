@@ -3,14 +3,16 @@
  * ---------------------------------------------------------------------------
  * Bağlantı kurulduğunda okunan karşılama cümlesi.
  *
- * app-init.js'teki ELM327 başlatma dizisi tamamlanır tamamlanmaz çağrılır.
- * Dashboard'un poll döngüsünün ilk turunu bitirmesini BEKLEMEDEN, kendi
- * sorgularını doğrudan elm327.js üzerinden yapar - böylece karşılama cümlesi
- * gecikmeden ve güncel verilerle okunur.
- *
- * "Sürüş kaydı başlatılıyor" cümlesi artık gerçeği yansıtıyor: trip-recorder.js
- * Bluetooth bağlantısı kurulduğunda (bu cümle okunduğunda) otomatik olarak
- * gerçek bir yolculuk kaydı başlatıyor (Faz 4).
+ * DÜZELTME (kritik hata): Önceki sürüm "Araç bağlantısı başarılı" ve "Sürüş
+ * kaydı başlatılıyor" cümlelerini KOŞULSUZ söylüyordu - 4 PID okumasının
+ * (motor sıcaklığı, dış sıcaklık, voltaj, yakıt) TAMAMI başarısız olsa bile.
+ * Bluetooth soketi açık ama ELM327 hiç yanıt vermiyorsa (ör. native taraftaki
+ * thread kilitlenmesi gibi bir sorun varsa) kullanıcı "bağlandı, kayıt
+ * başladı" duyuyordu ama gerçekte HİÇBİR veri akmıyordu - "sanki bağlantıdan
+ * bağımsız çalışıyor" şikayetinin sebebi tam olarak buydu. Artık en az BİR
+ * okuma gerçekten başarılı olmadıkça "başarılı" denmez; bunun yerine dürüst
+ * bir "veri alınamıyor" mesajı okunur ve `false` döner - çağıran taraf
+ * (app-init.js) bunu görüp sesli komut/uyarı sistemini başlatmaz, tekrar dener.
  * ---------------------------------------------------------------------------
  */
 
@@ -19,13 +21,12 @@ import { speak } from './tts.js';
 import { logInfo, logWarn } from '../core/logger.js';
 
 /**
- * Karşılama cümlesini oluşturur ve seslendirir.
+ * Karşılama cümlesini oluşturur ve seslendirir - yalnızca EN AZ BİR PID
+ * okuması gerçekten başarılıysa "bağlantı başarılı" der.
  * @param {string} ownerName - Aracın/uygulamanın sahibi (profil adı).
- * @returns {Promise<void>}
+ * @returns {Promise<boolean>} Bağlantının GERÇEKTEN doğrulanıp doğrulanmadığı.
  */
 export async function speakConnectionGreeting(ownerName) {
-  const parts = [`Merhaba ${ownerName}.`, 'Araç bağlantısı başarılı.'];
-
   const readings = await Promise.allSettled([
     queryPid('05'), // motor sıcaklığı
     queryPid('46'), // dış sıcaklık
@@ -36,6 +37,20 @@ export async function speakConnectionGreeting(ownerName) {
   const [coolant, outside, voltage, fuel] = readings.map((r) =>
     r.status === 'fulfilled' ? r.value : null,
   );
+
+  const verified = coolant !== null || outside !== null || voltage !== null || fuel !== null;
+
+  if (!verified) {
+    logWarn('greeting', 'Hiçbir PID okuması başarılı olmadı - bağlantı doğrulanamadı, "başarılı" denmeyecek');
+    try {
+      await speak(`${ownerName}, araca bağlanılıyor ama henüz veri alınamıyor. Kontrol ediliyor.`);
+    } catch (error) {
+      logWarn('greeting', 'Uyarı cümlesi seslendirilemedi', error);
+    }
+    return false;
+  }
+
+  const parts = [`Merhaba ${ownerName}.`, 'Araç bağlantısı başarılı.'];
 
   if (coolant) parts.push(`Motor sıcaklığı ${Math.round(coolant.value)} derece.`);
   if (outside) parts.push(`Dış hava sıcaklığı ${Math.round(outside.value)} derece.`);
@@ -53,4 +68,5 @@ export async function speakConnectionGreeting(ownerName) {
   } catch (error) {
     logWarn('greeting', 'Karşılama cümlesi seslendirilemedi', error);
   }
+  return true;
 }

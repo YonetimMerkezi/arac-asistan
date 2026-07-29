@@ -49,6 +49,10 @@ const FUEL_DENSITY_G_PER_L = 750;
 /** @type {ActiveTripState|null} */
 let active = null;
 
+/** @type {boolean} startTrip() senkron olarak HEMEN true yapar (ilk await'ten ÖNCE) -
+ * bkz. startTrip()'in başındaki kritik hata düzeltmesi notu. */
+let startInProgress = false;
+
 /** @type {(() => void)|null} gps-tracker aboneliğini iptal eden fonksiyon. */
 let unsubscribePosition = null;
 
@@ -66,7 +70,7 @@ export function initTripRecorder() {
   if (unsubscribeBluetooth) return; // zaten başlatılmış
 
   unsubscribeBluetooth = onBluetoothStateChange((state) => {
-    if (state.status === 'connected' && !active) {
+    if (state.status === 'connected' && !active && !startInProgress) {
       void startTrip();
     } else if (state.status !== 'connected' && active) {
       void stopTrip();
@@ -91,6 +95,7 @@ export function disposeTripRecorder() {
  * @returns {Promise<void>}
  */
 async function startTrip() {
+  startInProgress = true; // KRİTİK: ilk await'ten ÖNCE, senkron olarak set edilir - bkz. dosya başı düzeltme notu.
   try {
     const startedAt = Date.now();
     const tripId = await createTrip(startedAt);
@@ -111,6 +116,8 @@ async function startTrip() {
   } catch (error) {
     logError('trip-recorder', 'Yolculuk başlatılamadı', error);
     active = null;
+  } finally {
+    startInProgress = false;
   }
 }
 
@@ -181,10 +188,20 @@ function handleTripPosition(position) {
 
 /**
  * MAF tabanlı yakıt tüketimi örneklemesini başlatır.
+ *
+ * DÜZELTME: `setInterval`'ın async callback'i önceki turun bitmesini
+ * BEKLEMEZ - komut kuyruğu yoğunken (birden fazla modül aynı ELM327 hattını
+ * paylaşıyor) bir queryPid('10') çağrısı 3 saniyeden uzun sürebiliyordu,
+ * bu da YENİ bir sorgunun ESKİSİ hâlâ beklerken kuyruğa eklenmesine, yani
+ * tıkanıklığın kendi kendini beslemesine yol açıyordu. Artık bir örnekleme
+ * hâlâ sürüyorsa yeni turlar sessizce atlanır.
  */
 function startFuelSampling() {
+  let sampleInFlight = false;
+
   fuelSampleInterval = setInterval(async () => {
-    if (!active) return;
+    if (!active || sampleInFlight) return;
+    sampleInFlight = true;
     try {
       const maf = await queryPid('10'); // g/s
       if (!maf) return;
@@ -195,6 +212,8 @@ function startFuelSampling() {
     } catch (error) {
       // Tek bir örnekleme hatası kaydı bozmasın, sessizce atla.
       logWarn('trip-recorder', 'Yakıt örneklemesi başarısız', error);
+    } finally {
+      sampleInFlight = false;
     }
   }, FUEL_SAMPLE_INTERVAL_MS);
 }

@@ -30,6 +30,9 @@ import { registerPlugin } from '@capacitor/core';
  * @property {(opts: {data: string}) => Promise<void>} write
  * @property {() => Promise<void>} disconnect
  * @property {(eventName: 'read', listener: (event: ReadEvent) => void) => Promise<{remove: () => void}>} addListener
+ * @property {() => Promise<{bluetooth: string, bluetoothScan: string}>} requestPermissions - Native
+ *   tarafta @CapacitorPlugin(permissions=[...]) ile tanımlı BLUETOOTH_CONNECT/BLUETOOTH_SCAN
+ *   izinlerini ister (Capacitor'ın standart otomatik-üretilen metodu).
  */
 
 /** @type {BluetoothClassicPluginInterface} */
