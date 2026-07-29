@@ -22,6 +22,7 @@
     "@capacitor/filesystem": "^6.0.1",
     "@capacitor/share": "^6.0.2",
     "@capacitor/browser": "^6.0.3",
+    "@capacitor-community/keep-awake": "^6.0.0",
     "jspdf": "^2.5.2",
     "jspdf-autotable": "^3.8.4",
     "xlsx": "^0.18.5",

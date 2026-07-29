@@ -48,9 +48,9 @@ export function initFuelView() {
         <option value="">İstasyon seç (fiyat otomatik dolsun)...</option>
       </select>
       <select name="fuelType" data-fuel-type-select style="padding:8px;">
+        <option value="lpg" selected>LPG</option>
         <option value="benzin">Benzin</option>
         <option value="motorin">Motorin</option>
-        <option value="lpg">LPG</option>
       </select>
       <input name="liters" type="number" step="0.01" placeholder="Litre" required style="padding:8px;">
       <input name="amount" type="number" step="0.01" placeholder="Tutar (₺)" required style="padding:8px;">
@@ -105,7 +105,7 @@ function populateStationSelect(container) {
   const withPrice = cached.prices.filter((s) => s.benzin !== null || s.motorin !== null || s.lpg !== null);
 
   const rebuildOptions = () => {
-    const fuelType = fuelTypeSelect?.value ?? 'benzin';
+    const fuelType = fuelTypeSelect?.value ?? 'lpg';
     const eligible = withPrice.filter((s) => s[fuelType] !== null);
     select.innerHTML = '<option value="">İstasyon seç (fiyat otomatik dolsun)...</option>'
       + eligible.map((s, i) => `<option value="${i}">${s.dagitici} - ${s[fuelType]} ₺/L</option>`).join('');
@@ -117,22 +117,42 @@ function populateStationSelect(container) {
   const litersInput = container.querySelector('input[name="liters"]');
   const amountInput = container.querySelector('input[name="amount"]');
 
-  const recalcAmount = () => {
+  /**
+   * @returns {number|null} Seçili istasyon/yakıt türü için birim fiyat, yoksa null.
+   */
+  const currentPricePerLiter = () => {
     const station = eligibleStations[Number(select.value)];
-    const fuelType = fuelTypeSelect?.value ?? 'benzin';
-    const pricePerLiter = station?.[fuelType];
+    const fuelType = fuelTypeSelect?.value ?? 'lpg';
+    return station?.[fuelType] ?? null;
+  };
+
+  // İKİ YÖNLÜ hesap: litre girilince tutar, TUTAR girilince de litre
+  // otomatik hesaplanır. Programatik `.value =` ataması 'input' olayını
+  // TETİKLEMEDİĞİ için (yalnızca kullanıcı yazınca tetiklenir) iki yönlü
+  // dinleyici sonsuz döngüye girmez - her biri yalnızca DİĞER alanı yazar.
+  const recalcAmountFromLiters = () => {
+    const pricePerLiter = currentPricePerLiter();
     const liters = parseFloat(litersInput.value);
     if (pricePerLiter && liters) {
       amountInput.value = (pricePerLiter * liters).toFixed(2);
     }
   };
 
+  const recalcLitersFromAmount = () => {
+    const pricePerLiter = currentPricePerLiter();
+    const amount = parseFloat(amountInput.value);
+    if (pricePerLiter && amount) {
+      litersInput.value = (amount / pricePerLiter).toFixed(2);
+    }
+  };
+
   fuelTypeSelect?.addEventListener('change', () => {
     eligibleStations = rebuildOptions();
-    recalcAmount();
+    recalcAmountFromLiters();
   });
-  select.addEventListener('change', recalcAmount);
-  litersInput.addEventListener('input', recalcAmount);
+  select.addEventListener('change', recalcAmountFromLiters);
+  litersInput.addEventListener('input', recalcAmountFromLiters);
+  amountInput.addEventListener('input', recalcLitersFromAmount);
 
   // Harita/İstasyon ekranındaki "Yakıt Al" düğmesinden gelen bekleyen bir
   // seçim varsa (bkz. core/pending-fuel-selection.js), yakıt türünü ve
@@ -147,7 +167,7 @@ function populateStationSelect(container) {
     );
     if (matchIndex !== -1) {
       select.value = String(matchIndex);
-      recalcAmount();
+      recalcAmountFromLiters();
     }
   }
 
