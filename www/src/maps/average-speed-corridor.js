@@ -12,13 +12,28 @@
  */
 
 import { onPosition } from '../core/gps-tracker.js';
-import { listCorridors } from '../data/corridor-repository.js';
+import { listCorridors, createCorridor } from '../data/corridor-repository.js';
+import { getCachedCameras } from './speed-camera-service.js';
+import { findAverageSpeedZones } from './average-speed-zone-finder.js';
 import { haversineDistanceKm } from '../trip/geo-utils.js';
 import { speak } from '../voice/tts.js';
-import { logInfo } from '../core/logger.js';
+import { logInfo, logWarn } from '../core/logger.js';
 
 /** @type {number} Giriş/çıkış noktasına bu mesafede (metre) tetiklenir. */
 const TRIGGER_RADIUS_METERS = 60;
+
+/** @type {number} Otomatik tespit taramasının yarıçapı (metre). */
+const AUTO_DETECT_RADIUS_METERS = 5000;
+
+/** @type {number} İki otomatik tarama arasında araç en az bu kadar (metre) yol almalı. */
+const AUTO_DETECT_REFRESH_METERS = 2000;
+
+/** @type {number} Yeni tespit edilen bir koridor, mevcut bir koridorun girişine bu mesafeden (metre)
+ * yakınsa TEKRAR olarak kabul edilip eklenmez (aynı koridoru sürekli yeniden kaydetmeyi önler). */
+const DUPLICATE_THRESHOLD_METERS = 150;
+
+/** @type {{lat: number, lon: number}|null} */
+let lastAutoDetectLocation = null;
 
 /** @type {import('../data/corridor-repository.js').SpeedCorridor[]} */
 let corridors = [];
@@ -86,6 +101,50 @@ function handlePosition(position) {
         announceExit(corridor, enteredAt);
       }
     }
+  }
+
+  void maybeAutoDetectZones(position);
+}
+
+/**
+ * Belirli bir mesafe kat edildiğinde, konum çevresinde otomatik koridor
+ * tespiti dener ve bulunanları SESSİZCE kaydeder (Plan A - kullanıcı onayı
+ * istenmez). Zaten kayıtlı (yakın girişli) bir koridorla çakışanlar atlanır.
+ * @param {import('../core/gps-tracker.js').LivePosition} position
+ */
+async function maybeAutoDetectZones(position) {
+  const needsScan = !lastAutoDetectLocation
+    || haversineDistanceKm(
+      lastAutoDetectLocation.lat, lastAutoDetectLocation.lon, position.latitude, position.longitude,
+    ) * 1000 > AUTO_DETECT_REFRESH_METERS;
+
+  if (!needsScan) return;
+  lastAutoDetectLocation = { lat: position.latitude, lon: position.longitude };
+
+  try {
+    const candidates = await findAverageSpeedZones(
+      position.latitude, position.longitude, AUTO_DETECT_RADIUS_METERS, getCachedCameras(),
+    );
+
+    for (const zone of candidates) {
+      const isDuplicate = corridors.some((c) => haversineDistanceKm(
+        c.entry_lat, c.entry_lon, zone.entryLat, zone.entryLon,
+      ) * 1000 < DUPLICATE_THRESHOLD_METERS);
+      if (isDuplicate) continue;
+
+      await createCorridor({
+        name: zone.name,
+        entry_lat: zone.entryLat,
+        entry_lon: zone.entryLon,
+        exit_lat: zone.exitLat,
+        exit_lon: zone.exitLon,
+        limit_kmh: zone.limitKmh,
+      });
+      logInfo('average-speed-corridor', `Otomatik koridor kaydedildi: ${zone.name} (${zone.limitKmh} km/h)`);
+      corridors = await listCorridors(); // Yeni eklenen hemen aktif olsun - tekrar tespit edilip yinelenmesin.
+    }
+  } catch (error) {
+    logWarn('average-speed-corridor', 'Otomatik koridor taraması başarısız', error);
   }
 }
 

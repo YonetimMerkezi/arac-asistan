@@ -36,6 +36,32 @@ let lastRefreshLocation = null;
 /** @type {(() => void)|null} */
 let unsubscribe = null;
 
+/** @type {Set<(cameras: CameraPoint[]) => void>} Harita ekranı gibi görsel tüketiciler için abonelik. */
+const updateListeners = new Set();
+
+/**
+ * Şu an önbellekteki (en son konum çevresinde bulunan) sabit noktaları döndürür.
+ * Harita ekranının ikon çizebilmesi için - sesli uyarı akışından BAĞIMSIZ.
+ * @returns {CameraPoint[]}
+ */
+export function getCachedCameras() {
+  return cachedCameras;
+}
+
+/**
+ * Önbellek her tazelendiğinde (yeni konum çevresinde nokta bulunduğunda)
+ * çağrılır - harita ekranı bunu dinleyip ikonlarını güncel tutar.
+ * @param {(cameras: CameraPoint[]) => void} callback
+ * @returns {() => void} Aboneliği iptal eden fonksiyon.
+ */
+export function onCamerasUpdate(callback) {
+  updateListeners.add(callback);
+  if (cachedCameras.length > 0) {
+    queueMicrotask(() => callback(cachedCameras));
+  }
+  return () => updateListeners.delete(callback);
+}
+
 /**
  * Hız denetim noktası izleyicisini başlatır.
  */
@@ -87,6 +113,10 @@ async function refreshCameras(lat, lon) {
 
   if (cachedCameras.length > 0) {
     logInfo('speed-camera-service', `${cachedCameras.length} sabit nokta bulundu`);
+  }
+
+  for (const listener of updateListeners) {
+    listener(cachedCameras);
   }
 }
 
