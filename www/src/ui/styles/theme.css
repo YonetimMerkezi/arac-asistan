@@ -191,6 +191,63 @@ button:active {
   color: var(--sda-accent);
 }
 
+/* --- Navigasyon tam ekran modu --- */
+body.sda-fullscreen-nav .sda-topbar,
+body.sda-fullscreen-nav .sda-bottom-nav {
+  display: none;
+}
+
+body.sda-fullscreen-nav main {
+  height: 100vh;
+}
+
+body.sda-fullscreen-nav [data-view="navigation"] {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  padding: 0;
+  overflow: hidden;
+}
+
+body.sda-fullscreen-nav [data-view="navigation"] [data-nav-chrome] {
+  display: none;
+}
+
+body.sda-fullscreen-nav [data-view="navigation"] [data-map-wrapper] {
+  height: 100vh;
+}
+
+body.sda-fullscreen-nav [data-view="navigation"] [data-map] {
+  height: 100% !important;
+  border-radius: 0;
+}
+
+body.sda-fullscreen-nav [data-view="navigation"] [data-speed-card] {
+  position: absolute;
+  top: 12px;
+  left: 12px;
+  right: 12px;
+  z-index: 10;
+  margin: 0 !important;
+  box-shadow: var(--sda-shadow-elevated);
+}
+
+body.sda-fullscreen-nav [data-view="navigation"] [data-status] {
+  position: absolute;
+  bottom: 12px;
+  left: 12px;
+  right: 12px;
+  z-index: 10;
+  background: var(--sda-bg-elevated);
+  padding: 8px 12px;
+  border-radius: var(--sda-radius-sm);
+  margin: 0 !important;
+}
+
+body.sda-fullscreen-nav [data-view="navigation"] [data-gps-detail] {
+  display: none;
+}
+
 /**
  * ---------------------------------------------------------------------------
  * TEMA PAKETİ STİLLERİ ("data-style" özniteliği)

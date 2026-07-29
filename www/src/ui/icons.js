@@ -46,6 +46,8 @@ const ICON_MAP = {
   location: 'my_location',
   navigation: 'navigation',
   'speed-camera': 'photo_camera',
+  fullscreen: 'fullscreen',
+  'fullscreen-exit': 'fullscreen_exit',
 
   // Tema
   'theme-light': 'light_mode',

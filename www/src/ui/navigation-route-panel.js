@@ -27,13 +27,16 @@ let routeLine = null;
 let alternateRouteLines = [];
 
 /**
- * Mevcut konumdan verilen favori konuma rota hesaplayıp çizer.
+ * Verilen (veya mevcut konumdan) noktadan verilen favori/aranan konuma
+ * rota hesaplayıp çizer.
  * @param {import('leaflet').Map} map
- * @param {import('../maps/favorites-store.js').FavoriteLocation} destination
+ * @param {{lat: number, lon: number, label: string}} destination
  * @param {HTMLElement} container
+ * @param {{lat: number, lon: number, label: string}|null} [origin] - Belirtilmezse
+ *   mevcut GPS konumu kullanılır (önceki davranışla birebir uyumlu).
  */
-export async function drawRouteTo(map, destination, container) {
-  const current = getLastPosition();
+export async function drawRouteTo(map, destination, container, origin = null) {
+  const current = origin ?? getLastPosition();
   const statusEl = container.querySelector('[data-status]');
   if (!current) {
     if (statusEl) statusEl.textContent = 'Konum henüz alınamadı.';
@@ -43,7 +46,7 @@ export async function drawRouteTo(map, destination, container) {
   if (statusEl) statusEl.textContent = 'Rota hesaplanıyor...';
 
   const routes = await getDrivingRoute(
-    { lat: current.latitude, lon: current.longitude },
+    { lat: current.latitude ?? current.lat, lon: current.longitude ?? current.lon },
     { lat: destination.lat, lon: destination.lon },
   );
 
@@ -53,7 +56,7 @@ export async function drawRouteTo(map, destination, container) {
   }
 
   selectRoute(map, routes, 0, destination, container);
-  void appendRouteFuelCost(statusEl, current, routes[0].distanceKm);
+  void appendRouteFuelCost(statusEl, { latitude: current.latitude ?? current.lat, longitude: current.longitude ?? current.lon }, routes[0].distanceKm);
 }
 
 /**

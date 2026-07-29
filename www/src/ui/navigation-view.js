@@ -27,9 +27,8 @@ import { findNearbyPoi } from '../maps/poi-search.js';
 import { getFavoriteLocation, setFavoriteLocation } from '../maps/favorites-store.js';
 import { reverseGeocodeIlIlce } from '../maps/reverse-geocode.js';
 import { getFuelPrices } from '../maps/fuel-price-service.js';
-import { getSpeedLimitNear } from '../maps/speed-limit-service.js';
-import { getLivePidValue, onLiveDataChange } from '../core/vehicle-live-data-store.js';
 import { drawRouteTo } from './navigation-route-panel.js';
+import { bindLiveSpeedLimitCard, bindFullscreenToggle } from './navigation-map-overlay.js';
 import { openAddressSearchModal } from './components/address-search-modal.js';
 import { getFuelStationCache, onFuelStationCacheUpdate, forceRefreshFuelStationCache } from '../maps/fuel-station-cache.js';
 import { registerRefreshHandler } from '../core/refresh-registry.js';
@@ -54,9 +53,6 @@ let map = null;
 
 /** @type {import('leaflet').Marker|null} */
 let vehicleMarker = null;
-
-/** @type {(() => void)|null} Canlı hız/limit kartının GPS aboneliği. */
-let unsubscribeSpeedLimit = null;
 
 /** @type {import('leaflet').Marker[]} Yalnızca yakıt DIŞI kategorilerin işaretçileri (Yakıt kendi listesini navigation-fuel-panel.js'te tutar). */
 let poiMarkers = [];
@@ -84,43 +80,50 @@ export function initNavigationView() {
   }
 
   container.innerHTML = `
-    <div class="sda-card sda-card--elevated" style="display:flex; align-items:center; justify-content:space-around; margin-bottom:8px;">
-      <div style="text-align:center;">
-        <p data-live-speed-obd style="font-family:var(--sda-font-display); font-size:1.5rem; margin:0; color:var(--sda-text-primary);">--</p>
-        <p class="sda-card__label" style="margin:2px 0 0 0; font-size:0.7rem;">Araç (OBD)</p>
+    <div data-nav-chrome>
+      <div data-speed-card class="sda-card sda-card--elevated" style="display:flex; align-items:center; justify-content:space-around; margin-bottom:8px;">
+        <div style="text-align:center;">
+          <p data-live-speed-obd style="font-family:var(--sda-font-display); font-size:1.5rem; margin:0; color:var(--sda-text-primary);">--</p>
+          <p class="sda-card__label" style="margin:2px 0 0 0; font-size:0.7rem;">Araç (OBD)</p>
+        </div>
+        <div style="width:1px; height:36px; background:var(--sda-hairline);"></div>
+        <div style="text-align:center;">
+          <p data-live-speed-gps style="font-family:var(--sda-font-display); font-size:1.5rem; margin:0; color:var(--sda-text-primary);">--</p>
+          <p class="sda-card__label" style="margin:2px 0 0 0; font-size:0.7rem;">GPS</p>
+        </div>
+        <div style="width:1px; height:36px; background:var(--sda-hairline);"></div>
+        <div style="text-align:center;">
+          <p data-live-speed-limit style="font-family:var(--sda-font-display); font-size:1.5rem; margin:0; color:var(--sda-text-muted);">--</p>
+          <p class="sda-card__label" style="margin:2px 0 0 0; font-size:0.7rem;">Yol Limiti</p>
+        </div>
       </div>
-      <div style="width:1px; height:36px; background:var(--sda-hairline);"></div>
-      <div style="text-align:center;">
-        <p data-live-speed-gps style="font-family:var(--sda-font-display); font-size:1.5rem; margin:0; color:var(--sda-text-primary);">--</p>
-        <p class="sda-card__label" style="margin:2px 0 0 0; font-size:0.7rem;">GPS</p>
+      <button type="button" data-address-search class="sda-btn sda-btn--primary" style="width:100%; margin-bottom:8px;">
+        ${iconMarkup('search', { size: 18 })} Nereye Gidiyorsun? (Adres Ara)
+      </button>
+      <div style="display:grid; grid-template-columns:repeat(3, 1fr); gap:8px; margin-bottom:8px;">
+        <button type="button" data-quick="home" class="sda-nav-btn" style="background:var(--sda-accent-soft); flex-direction:row; gap:4px; justify-content:center;">${iconMarkup('home', { size: 16 })}<span>Eve Git</span></button>
+        <button type="button" data-quick="work" class="sda-nav-btn" style="background:var(--sda-accent-soft); flex-direction:row; gap:4px; justify-content:center;">${iconMarkup('work', { size: 16 })}<span>İşe Git</span></button>
+        <button type="button" data-locate class="sda-nav-btn" style="background:var(--sda-bg-elevated); flex-direction:row; gap:4px; justify-content:center;">${iconMarkup('location', { size: 16 })}<span>Konumum</span></button>
       </div>
-      <div style="width:1px; height:36px; background:var(--sda-hairline);"></div>
-      <div style="text-align:center;">
-        <p data-live-speed-limit style="font-family:var(--sda-font-display); font-size:1.5rem; margin:0; color:var(--sda-text-muted);">--</p>
-        <p class="sda-card__label" style="margin:2px 0 0 0; font-size:0.7rem;">Yol Limiti</p>
+      <div style="display:grid; grid-template-columns:repeat(2, 1fr); gap:8px; margin-bottom:8px;">
+        <button type="button" data-set-favorite="home" class="sda-nav-btn" style="background:var(--sda-bg-elevated); font-size:0.65rem; justify-content:center;">Evi Ayarla</button>
+        <button type="button" data-set-favorite="work" class="sda-nav-btn" style="background:var(--sda-bg-elevated); font-size:0.65rem; justify-content:center;">İşi Ayarla</button>
       </div>
+      <div style="display:grid; grid-template-columns:repeat(2, 1fr); gap:8px; margin-bottom:8px;">
+        ${Object.entries(CATEGORY_VISUALS).map(([category, visual]) => `
+          <button type="button" data-poi="${category}" class="sda-category-btn" style="background:${visual.color}; justify-content:center;">
+            ${iconMarkup(visual.icon, { size: 16 })}<span>${categoryLabel(category)}</span>
+          </button>
+        `).join('')}
+      </div>
+      <div data-brand-filter style="display:flex; gap:6px; overflow-x:auto; margin-bottom:8px; padding-bottom:2px;"></div>
     </div>
-    <button type="button" data-address-search class="sda-btn sda-btn--primary" style="width:100%; margin-bottom:8px;">
-      ${iconMarkup('search', { size: 18 })} Nereye Gidiyorsun? (Adres Ara)
-    </button>
-    <div style="display:grid; grid-template-columns:repeat(3, 1fr); gap:8px; margin-bottom:8px;">
-      <button type="button" data-quick="home" class="sda-nav-btn" style="background:var(--sda-accent-soft); flex-direction:row; gap:4px; justify-content:center;">${iconMarkup('home', { size: 16 })}<span>Eve Git</span></button>
-      <button type="button" data-quick="work" class="sda-nav-btn" style="background:var(--sda-accent-soft); flex-direction:row; gap:4px; justify-content:center;">${iconMarkup('work', { size: 16 })}<span>İşe Git</span></button>
-      <button type="button" data-locate class="sda-nav-btn" style="background:var(--sda-bg-elevated); flex-direction:row; gap:4px; justify-content:center;">${iconMarkup('location', { size: 16 })}<span>Konumum</span></button>
+    <div data-map-wrapper style="position:relative;">
+      <div data-map style="height: 48vh; border-radius: var(--sda-radius-md); overflow:hidden;"></div>
+      <button type="button" data-fullscreen-toggle class="sda-nav-btn" style="position:absolute; top:8px; right:8px; z-index:5; background:var(--sda-bg-elevated); padding:8px;">
+        ${iconMarkup('fullscreen', { size: 20 })}
+      </button>
     </div>
-    <div style="display:grid; grid-template-columns:repeat(2, 1fr); gap:8px; margin-bottom:8px;">
-      <button type="button" data-set-favorite="home" class="sda-nav-btn" style="background:var(--sda-bg-elevated); font-size:0.65rem; justify-content:center;">Evi Ayarla</button>
-      <button type="button" data-set-favorite="work" class="sda-nav-btn" style="background:var(--sda-bg-elevated); font-size:0.65rem; justify-content:center;">İşi Ayarla</button>
-    </div>
-    <div style="display:grid; grid-template-columns:repeat(2, 1fr); gap:8px; margin-bottom:8px;">
-      ${Object.entries(CATEGORY_VISUALS).map(([category, visual]) => `
-        <button type="button" data-poi="${category}" class="sda-category-btn" style="background:${visual.color}; justify-content:center;">
-          ${iconMarkup(visual.icon, { size: 16 })}<span>${categoryLabel(category)}</span>
-        </button>
-      `).join('')}
-    </div>
-    <div data-brand-filter style="display:flex; gap:6px; overflow-x:auto; margin-bottom:8px; padding-bottom:2px;"></div>
-    <div data-map style="height: 48vh; border-radius: var(--sda-radius-md); overflow:hidden;"></div>
     <p data-status class="sda-card__label" style="margin-top:8px;"></p>
     <div data-gps-detail style="margin-top:8px;"></div>
     <div data-poi-list style="margin-top:8px;"></div>
@@ -150,6 +153,7 @@ export function initNavigationView() {
   if (gpsDetailContainer) mountGpsDetailCard(gpsDetailContainer);
 
   bindLiveSpeedLimitCard(container);
+  bindFullscreenToggle(container, map);
 
   container.querySelector('[data-address-search]')?.addEventListener('click', () => {
     openAddressSearchModal(map, container);
@@ -180,50 +184,6 @@ export function initNavigationView() {
 function categoryLabel(category) {
   const labels = { fuel: 'Yakıt', parking: 'Otopark', service: 'Servis', hospital: 'Hastane' };
   return labels[category] ?? category;
-}
-
-/**
- * Canlı hız kartını hem OBD (araç beyni) hem GPS kaynağından besler - GPS
- * hızı limitle karşılaştırılır (speed-warning.js zaten sesli uyarıyor, bu
- * yalnızca GÖRSEL karşılığı; ayrı bir ağ isteği YAPMAZ, aynı önbelleği okur).
- *
- * OBD hızı için AYRI bir sorgu ATILMAZ - dashboard-view.js zaten PID 0D'yi
- * sürekli okuyor (Panel açık olmasa bile, bağlantı sürdüğü sürece); burada
- * yalnızca o paylaşılan sonucu (vehicle-live-data-store.js) okunur - aksi
- * halde aynı komut kuyruğuna gereksiz ikinci bir tüketici eklenmiş olurdu.
- * @param {HTMLElement} container
- */
-function bindLiveSpeedLimitCard(container) {
-  unsubscribeSpeedLimit?.();
-
-  const updateObdSpeed = () => {
-    const obdEl = container.querySelector('[data-live-speed-obd]');
-    if (!obdEl) return;
-    const cached = getLivePidValue('0D');
-    obdEl.textContent = cached ? String(Math.round(cached.value)) : '--';
-  };
-
-  updateObdSpeed();
-  const unsubscribeObd = onLiveDataChange(updateObdSpeed);
-
-  const unsubscribePosition = onPosition(async (position) => {
-    const gpsEl = container.querySelector('[data-live-speed-gps]');
-    const limitEl = container.querySelector('[data-live-speed-limit]');
-    if (!gpsEl || !limitEl) return;
-
-    gpsEl.textContent = String(Math.round(position.speedKmh));
-
-    const limit = await getSpeedLimitNear(position.latitude, position.longitude);
-    limitEl.textContent = limit !== null ? String(limit) : '--';
-
-    const exceeding = limit !== null && position.speedKmh > limit;
-    gpsEl.style.color = exceeding ? 'var(--sda-danger)' : 'var(--sda-text-primary)';
-  });
-
-  unsubscribeSpeedLimit = () => {
-    unsubscribeObd();
-    unsubscribePosition();
-  };
 }
 
 /**

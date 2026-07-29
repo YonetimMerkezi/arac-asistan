@@ -1,14 +1,15 @@
 /**
  * address-search-modal.js
  * ---------------------------------------------------------------------------
- * "Nereye gidiyorsun?" alt sayfası: kullanıcı bir adres/yer adı yazar,
- * yazarken önerileri görür (autocomplete), birini seçince o noktaya rota
- * çizilir.
+ * "Nereden / Nereye gidiyorsun?" alt sayfası: kullanıcı hem başlangıç hem
+ * varış noktasını yazabilir, yazarken önerileri görür (autocomplete).
  *
- * ÖNCEKİ DURUM: Navigasyon ekranı yalnızca ÖNCEDEN kaydedilmiş Ev/İş
- * konumlarına veya yakın POI aramasına rota çizebiliyordu - kullanıcının
- * KEYFİ bir adrese/yer adına gitmesinin hiçbir yolu yoktu. Bu dosya o
- * temel eksikliği kapatır.
+ * ÖNCEKİ DURUM: Yalnızca varış noktası seçilebiliyordu, başlangıç HER ZAMAN
+ * mevcut GPS konumuydu - kullanıcının "İstanbul'dan Ankara'ya" gibi mevcut
+ * konumundan BAĞIMSIZ bir rota planlamasının yolu yoktu.
+ *
+ * Nereden alanı BOŞ bırakılırsa mevcut konum kullanılır (önceki davranışla
+ * geriye dönük uyumlu) - yalnızca DOLDURULURSA o nokta başlangıç olur.
  * ---------------------------------------------------------------------------
  */
 
@@ -27,30 +28,60 @@ const DEBOUNCE_MS = 600;
  */
 export function openAddressSearchModal(map, container) {
   const bodyHtml = `
-    <input type="text" data-address-input placeholder="Adres, mahalle, işletme adı..." class="sda-select" style="width:100%; margin-bottom:12px;" autofocus>
-    <div data-address-results></div>
+    <p class="sda-card__label" style="margin-bottom:4px;">Nereden (boş = mevcut konumunuz)</p>
+    <input type="text" data-origin-input placeholder="Mevcut konumunuz" class="sda-select" style="width:100%; margin-bottom:4px;">
+    <div data-origin-results style="margin-bottom:12px;"></div>
+
+    <p class="sda-card__label" style="margin-bottom:4px;">Nereye</p>
+    <input type="text" data-destination-input placeholder="Adres, mahalle, işletme adı..." class="sda-select" style="width:100%; margin-bottom:4px;" autofocus>
+    <div data-destination-results></div>
   `;
 
-  openModal({ title: 'Nereye Gidiyorsun?', bodyHtml, onMount: (body, { close }) => {
-    const input = body.querySelector('[data-address-input]');
-    const resultsEl = body.querySelector('[data-address-results]');
-    let debounceHandle = null;
+  /** @type {{lat: number, lon: number, label: string}|null} Seçilirse geçersiz kılınan başlangıç noktası. */
+  let selectedOrigin = null;
 
-    input?.addEventListener('input', () => {
-      if (debounceHandle) clearTimeout(debounceHandle);
-      debounceHandle = setTimeout(() => runSearch(input.value, resultsEl, map, container, close), DEBOUNCE_MS);
+  openModal({ title: 'Nereden / Nereye Gidiyorsun?', bodyHtml, onMount: (body, { close }) => {
+    const originInput = body.querySelector('[data-origin-input]');
+    const originResultsEl = body.querySelector('[data-origin-results]');
+    const destinationInput = body.querySelector('[data-destination-input]');
+    const destinationResultsEl = body.querySelector('[data-destination-results]');
+
+    let originDebounce = null;
+    let destinationDebounce = null;
+
+    originInput?.addEventListener('input', () => {
+      selectedOrigin = null; // Kullanıcı elle yazmaya başlarsa önceki seçim geçersizleşir.
+      if (originDebounce) clearTimeout(originDebounce);
+      originDebounce = setTimeout(() => {
+        runSearch(originInput.value, originResultsEl, (suggestion) => {
+          selectedOrigin = suggestion;
+          originInput.value = suggestion.label.split(',')[0];
+          originResultsEl.innerHTML = '';
+        });
+      }, DEBOUNCE_MS);
+    });
+
+    destinationInput?.addEventListener('input', () => {
+      if (destinationDebounce) clearTimeout(destinationDebounce);
+      destinationDebounce = setTimeout(() => {
+        runSearch(destinationInput.value, destinationResultsEl, (suggestion) => {
+          const shortLabel = suggestion.label.split(',')[0];
+          close();
+          void drawRouteTo(map, { lat: suggestion.lat, lon: suggestion.lon, label: shortLabel }, container, selectedOrigin);
+        });
+      }, DEBOUNCE_MS);
     });
   } });
 }
 
 /**
+ * Ortak arama + öneri listesi çizme mantığı - hem Nereden hem Nereye
+ * alanları tarafından paylaşılır.
  * @param {string} query
  * @param {HTMLElement|null} resultsEl
- * @param {import('leaflet').Map} map
- * @param {HTMLElement} container
- * @param {() => void} closeModal
+ * @param {(suggestion: {lat: number, lon: number, label: string}) => void} onSelect
  */
-async function runSearch(query, resultsEl, map, container, closeModal) {
+async function runSearch(query, resultsEl, onSelect) {
   if (!resultsEl) return;
 
   if (query.trim().length < 3) {
@@ -76,13 +107,7 @@ async function runSearch(query, resultsEl, map, container, closeModal) {
   resultsEl.querySelectorAll('[data-suggestion]').forEach((button) => {
     button.addEventListener('click', () => {
       const suggestion = suggestions[Number(button.getAttribute('data-suggestion'))];
-      if (!suggestion) return;
-
-      // Seçilen sonucun tam adı uzun olabilir - durum satırında yalnızca
-      // ilk parçası (ör. mahalle/cadde adı) gösterilir, tamamı değil.
-      const shortLabel = suggestion.label.split(',')[0];
-      closeModal();
-      void drawRouteTo(map, { lat: suggestion.lat, lon: suggestion.lon, label: shortLabel }, container);
+      if (suggestion) onSelect(suggestion);
     });
   });
 }
