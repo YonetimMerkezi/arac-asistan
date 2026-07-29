@@ -10,6 +10,8 @@
  * ---------------------------------------------------------------------------
  */
 import { initThemeManager } from './theme-manager.js';
+import { initKeepAwake } from './keep-awake.js';
+import { initOwnerName, getOwnerName } from './owner-name-store.js';
 import { requestAllPermissionsUpfront } from './permissions-bootstrap.js';
 import { initViewRouter } from './view-router.js';
 import { mountNavIcons } from './nav-icons.js';
@@ -51,9 +53,6 @@ import { initStationBrandStore } from '../maps/station-brand-store.js';
 import { initFuelStationCache } from '../maps/fuel-station-cache.js';
 import { initBackgroundService } from './background-service.js';
 
-/** @type {string} Karşılama cümlesinde kullanılan sahip adı. */
-const OWNER_NAME = 'Sedat';
-
 /**
  * @type {boolean} ELM327 başlatma dizisinin şu anki bağlantı için zaten
  * çalıştırılıp çalıştırılmadığı. Bluetooth durumu "connected" olduğunda
@@ -90,6 +89,8 @@ window.addEventListener('unhandledrejection', (event) => {
 async function bootstrap() {
   try {
     await initThemeManager();
+    void initKeepAwake();
+    await initOwnerName();
     void requestAllPermissionsUpfront();
     initViewRouter('dashboard');
     mountNavIcons();
@@ -202,7 +203,7 @@ async function initializeElm327AndVoice() {
       // KRİTİK: greeting'in kendi PID okumaları (motor sıcaklığı, dış sıcaklık,
       // voltaj, yakıt) GERÇEK doğrulama sinyalidir - "başarılı" yalnızca en az
       // biri gerçekten çalışırsa döner.
-      const verified = await speakConnectionGreeting(OWNER_NAME);
+      const verified = await speakConnectionGreeting(getOwnerName());
 
       if (!verified) {
         if (attempt < MAX_ATTEMPTS) {

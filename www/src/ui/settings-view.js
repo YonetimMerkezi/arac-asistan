@@ -22,11 +22,7 @@ import {
   onStateChange as onBluetoothStateChange,
 } from '../bluetooth/bluetooth-manager.js';
 import { getLastPosition } from '../core/gps-tracker.js';
-import {
-  isBackgroundServiceEnabled,
-  startBackgroundService,
-  stopBackgroundService,
-} from '../core/background-service.js';
+import { bindBackgroundServiceToggle, bindKeepAwakeToggle, bindOwnerNameInput } from './settings-preferences-panel.js';
 import { createCorridor, listCorridors, deleteCorridor } from '../data/corridor-repository.js';
 import { refreshCorridors } from '../maps/average-speed-corridor.js';
 import { getEcuStatus, onEcuStatusChange } from '../obd/ecu-connection-store.js';
@@ -115,6 +111,26 @@ function render(container) {
       <button type="button" data-bg-service-toggle class="sda-nav-btn" style="width:100%; flex-direction:row; gap:8px;"></button>
     </div>
 
+    <h3 style="margin:4px 0;">Ekran</h3>
+    <div class="sda-card" style="margin-bottom:16px;">
+      <p class="sda-card__label">Ekran Açık Kalsın</p>
+      <p style="font-size:0.85rem; color:var(--sda-text-muted); margin:4px 0 12px;">
+        Açıksa, uygulama açıkken telefon ekranı kendiliğinden kararıp
+        kilitlenmez (pil tüketimini artırır).
+      </p>
+      <button type="button" data-keep-awake-toggle class="sda-nav-btn" style="width:100%; flex-direction:row; gap:8px;"></button>
+    </div>
+
+    <h3 style="margin:4px 0;">Sesli Asistan</h3>
+    <div class="sda-card" style="margin-bottom:16px;">
+      <p class="sda-card__label">İsminiz</p>
+      <p style="font-size:0.85rem; color:var(--sda-text-muted); margin:4px 0 8px;">
+        Sesli karşılamada ve komutlarda bu isimle hitap edilir - arabayı
+        birden fazla kişi kullanıyorsa değiştirebilirsiniz.
+      </p>
+      <input type="text" data-owner-name-input class="sda-select" style="width:100%;" placeholder="İsminiz">
+    </div>
+
     <h3 style="margin:4px 0;">Ortalama Hız Koridorları</h3>
     <form data-corridor-form class="sda-card" style="display:grid; gap:8px; margin-bottom:12px;">
       <input name="name" type="text" placeholder="Koridor adı" required style="padding:8px;">
@@ -133,6 +149,8 @@ function render(container) {
   renderDeviceSection(container);
   container.querySelector('[data-open-log]')?.addEventListener('click', openDiagnosticsLogModal);
   bindBackgroundServiceToggle(container);
+  bindKeepAwakeToggle(container);
+  bindOwnerNameInput(container);
   bindCorridorForm(container);
   void renderCorridorList(container);
 }
@@ -214,33 +232,6 @@ function bindSoundToggle(container, muted) {
     const next = !isMuted();
     await setMuted(next);
     updateLabel(next);
-  });
-}
-
-/**
- * @param {HTMLElement} container
- */
-function bindBackgroundServiceToggle(container) {
-  const button = container.querySelector('[data-bg-service-toggle]');
-  if (!button) return;
-
-  const updateLabel = (enabled) => {
-    const icon = iconMarkup(enabled ? 'done' : 'bolt', { size: 20 });
-    const text = enabled ? 'Açık (kapatmak için dokun)' : 'Kapalı (açmak için dokun)';
-    button.innerHTML = `${icon}<span>${text}</span>`;
-  };
-
-  void isBackgroundServiceEnabled().then(updateLabel);
-
-  button.addEventListener('click', async () => {
-    const currentlyEnabled = await isBackgroundServiceEnabled();
-    if (currentlyEnabled) {
-      await stopBackgroundService();
-      updateLabel(false);
-    } else {
-      const started = await startBackgroundService();
-      updateLabel(started);
-    }
   });
 }
 

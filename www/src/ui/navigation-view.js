@@ -23,12 +23,14 @@
 import L from 'leaflet';
 import { onPosition, getLastPosition, ensureGpsTracking } from '../core/gps-tracker.js';
 import { onViewChange } from '../core/view-router.js';
-import { getDrivingRoute } from '../maps/route-service.js';
 import { findNearbyPoi } from '../maps/poi-search.js';
 import { getFavoriteLocation, setFavoriteLocation } from '../maps/favorites-store.js';
 import { reverseGeocodeIlIlce } from '../maps/reverse-geocode.js';
 import { getFuelPrices } from '../maps/fuel-price-service.js';
-import { estimateAverageConsumption, estimateFuelCost } from '../fuel/route-cost-estimator.js';
+import { getSpeedLimitNear } from '../maps/speed-limit-service.js';
+import { getLivePidValue, onLiveDataChange } from '../core/vehicle-live-data-store.js';
+import { drawRouteTo } from './navigation-route-panel.js';
+import { openAddressSearchModal } from './components/address-search-modal.js';
 import { getFuelStationCache, onFuelStationCacheUpdate, forceRefreshFuelStationCache } from '../maps/fuel-station-cache.js';
 import { registerRefreshHandler } from '../core/refresh-registry.js';
 import { renderFuelPanel, clearFuelPanel } from './navigation-fuel-panel.js';
@@ -53,8 +55,8 @@ let map = null;
 /** @type {import('leaflet').Marker|null} */
 let vehicleMarker = null;
 
-/** @type {import('leaflet').Polyline|null} */
-let routeLine = null;
+/** @type {(() => void)|null} Canlı hız/limit kartının GPS aboneliği. */
+let unsubscribeSpeedLimit = null;
 
 /** @type {import('leaflet').Marker[]} Yalnızca yakıt DIŞI kategorilerin işaretçileri (Yakıt kendi listesini navigation-fuel-panel.js'te tutar). */
 let poiMarkers = [];
@@ -82,6 +84,25 @@ export function initNavigationView() {
   }
 
   container.innerHTML = `
+    <div class="sda-card sda-card--elevated" style="display:flex; align-items:center; justify-content:space-around; margin-bottom:8px;">
+      <div style="text-align:center;">
+        <p data-live-speed-obd style="font-family:var(--sda-font-display); font-size:1.5rem; margin:0; color:var(--sda-text-primary);">--</p>
+        <p class="sda-card__label" style="margin:2px 0 0 0; font-size:0.7rem;">Araç (OBD)</p>
+      </div>
+      <div style="width:1px; height:36px; background:var(--sda-hairline);"></div>
+      <div style="text-align:center;">
+        <p data-live-speed-gps style="font-family:var(--sda-font-display); font-size:1.5rem; margin:0; color:var(--sda-text-primary);">--</p>
+        <p class="sda-card__label" style="margin:2px 0 0 0; font-size:0.7rem;">GPS</p>
+      </div>
+      <div style="width:1px; height:36px; background:var(--sda-hairline);"></div>
+      <div style="text-align:center;">
+        <p data-live-speed-limit style="font-family:var(--sda-font-display); font-size:1.5rem; margin:0; color:var(--sda-text-muted);">--</p>
+        <p class="sda-card__label" style="margin:2px 0 0 0; font-size:0.7rem;">Yol Limiti</p>
+      </div>
+    </div>
+    <button type="button" data-address-search class="sda-btn sda-btn--primary" style="width:100%; margin-bottom:8px;">
+      ${iconMarkup('search', { size: 18 })} Nereye Gidiyorsun? (Adres Ara)
+    </button>
     <div style="display:grid; grid-template-columns:repeat(3, 1fr); gap:8px; margin-bottom:8px;">
       <button type="button" data-quick="home" class="sda-nav-btn" style="background:var(--sda-accent-soft); flex-direction:row; gap:4px; justify-content:center;">${iconMarkup('home', { size: 16 })}<span>Eve Git</span></button>
       <button type="button" data-quick="work" class="sda-nav-btn" style="background:var(--sda-accent-soft); flex-direction:row; gap:4px; justify-content:center;">${iconMarkup('work', { size: 16 })}<span>İşe Git</span></button>
@@ -128,6 +149,12 @@ export function initNavigationView() {
   const gpsDetailContainer = container.querySelector('[data-gps-detail]');
   if (gpsDetailContainer) mountGpsDetailCard(gpsDetailContainer);
 
+  bindLiveSpeedLimitCard(container);
+
+  container.querySelector('[data-address-search]')?.addEventListener('click', () => {
+    openAddressSearchModal(map, container);
+  });
+
   // "Kaydırarak yenile" - yakıt istasyonu önbelleğini zorla tazeler; Yakıt
   // kategorisi açıksa mevcut onFuelStationCacheUpdate aboneliği paneli
   // otomatik yeniden çizer (kod tekrarı yok).
@@ -153,6 +180,50 @@ export function initNavigationView() {
 function categoryLabel(category) {
   const labels = { fuel: 'Yakıt', parking: 'Otopark', service: 'Servis', hospital: 'Hastane' };
   return labels[category] ?? category;
+}
+
+/**
+ * Canlı hız kartını hem OBD (araç beyni) hem GPS kaynağından besler - GPS
+ * hızı limitle karşılaştırılır (speed-warning.js zaten sesli uyarıyor, bu
+ * yalnızca GÖRSEL karşılığı; ayrı bir ağ isteği YAPMAZ, aynı önbelleği okur).
+ *
+ * OBD hızı için AYRI bir sorgu ATILMAZ - dashboard-view.js zaten PID 0D'yi
+ * sürekli okuyor (Panel açık olmasa bile, bağlantı sürdüğü sürece); burada
+ * yalnızca o paylaşılan sonucu (vehicle-live-data-store.js) okunur - aksi
+ * halde aynı komut kuyruğuna gereksiz ikinci bir tüketici eklenmiş olurdu.
+ * @param {HTMLElement} container
+ */
+function bindLiveSpeedLimitCard(container) {
+  unsubscribeSpeedLimit?.();
+
+  const updateObdSpeed = () => {
+    const obdEl = container.querySelector('[data-live-speed-obd]');
+    if (!obdEl) return;
+    const cached = getLivePidValue('0D');
+    obdEl.textContent = cached ? String(Math.round(cached.value)) : '--';
+  };
+
+  updateObdSpeed();
+  const unsubscribeObd = onLiveDataChange(updateObdSpeed);
+
+  const unsubscribePosition = onPosition(async (position) => {
+    const gpsEl = container.querySelector('[data-live-speed-gps]');
+    const limitEl = container.querySelector('[data-live-speed-limit]');
+    if (!gpsEl || !limitEl) return;
+
+    gpsEl.textContent = String(Math.round(position.speedKmh));
+
+    const limit = await getSpeedLimitNear(position.latitude, position.longitude);
+    limitEl.textContent = limit !== null ? String(limit) : '--';
+
+    const exceeding = limit !== null && position.speedKmh > limit;
+    gpsEl.style.color = exceeding ? 'var(--sda-danger)' : 'var(--sda-text-primary)';
+  });
+
+  unsubscribeSpeedLimit = () => {
+    unsubscribeObd();
+    unsubscribePosition();
+  };
 }
 
 /**
@@ -200,7 +271,7 @@ function bindQuickNavButtons(container) {
         return;
       }
 
-      await drawRouteTo(favorite, container);
+      await drawRouteTo(map, favorite, container);
     });
   });
 }
@@ -266,70 +337,6 @@ function bindLocateButton(container) {
     map.setView([current.latitude, current.longitude], 16);
     if (statusEl) statusEl.textContent = '';
   });
-}
-
-/**
- * Bir favori konuma rota çizer.
- * @param {import('../maps/favorites-store.js').FavoriteLocation} destination
- * @param {HTMLElement} container
- */
-async function drawRouteTo(destination, container) {
-  const current = getLastPosition();
-  const statusEl = container.querySelector('[data-status]');
-  if (!current) {
-    if (statusEl) statusEl.textContent = 'Konum henüz alınamadı.';
-    return;
-  }
-
-  if (statusEl) statusEl.textContent = 'Rota hesaplanıyor...';
-
-  const route = await getDrivingRoute(
-    { lat: current.latitude, lon: current.longitude },
-    { lat: destination.lat, lon: destination.lon },
-  );
-
-  if (!route) {
-    if (statusEl) statusEl.textContent = 'Rota alınamadı (internet bağlantınızı kontrol edin).';
-    return;
-  }
-
-  if (routeLine) map.removeLayer(routeLine);
-  routeLine = L.polyline(route.coordinates, { color: '#4FD8E0', weight: 5 }).addTo(map);
-  map.fitBounds(routeLine.getBounds(), { padding: [24, 24] });
-
-  if (statusEl) {
-    statusEl.textContent = `${destination.label}: ${route.distanceKm.toFixed(1)} km, ~${Math.round(route.durationMinutes)} dk`;
-  }
-
-  void appendRouteFuelCost(statusEl, current, route.distanceKm);
-}
-
-/**
- * Rota mesafesine göre yaklaşık yakıt maliyetini hesaplayıp durum satırına
- * ekler - hesaplama bittiğinde eklenir (rota anında görünsün, maliyet
- * hesaplaması ağ isteği gerektirdiği için biraz gecikebilir).
- * @param {HTMLElement|null} statusEl
- * @param {import('../core/gps-tracker.js').LivePosition} current
- * @param {number} distanceKm
- */
-async function appendRouteFuelCost(statusEl, current, distanceKm) {
-  try {
-    const location = await reverseGeocodeIlIlce(current.latitude, current.longitude);
-    if (!location) return;
-
-    const prices = await getFuelPrices(location.il, location.ilce, current.longitude);
-    const withPrice = prices.find((p) => p.benzin !== null);
-    if (!withPrice) return;
-
-    const litersPer100Km = await estimateAverageConsumption();
-    const { liters, cost } = estimateFuelCost(distanceKm, litersPer100Km, withPrice.benzin);
-
-    if (statusEl) {
-      statusEl.textContent += ` · ~${liters.toFixed(1)} L, ~${cost.toFixed(0)} ₺ (yakıt tahmini)`;
-    }
-  } catch (error) {
-    logWarn('navigation-view', 'Rota yakıt maliyeti hesaplanamadı', error);
-  }
 }
 
 /**

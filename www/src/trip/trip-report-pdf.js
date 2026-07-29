@@ -10,7 +10,14 @@
  */
 
 import { jsPDF } from 'jspdf';
-import autoTable from 'jspdf-autotable';
+// KRİTİK DÜZELTME: `import autoTable from 'jspdf-autotable'` (varsayılan
+// import) + `autoTable(doc, {...})` (fonksiyonel API) esbuild ile paketlenince
+// "TypeError: ...default is not a function" ile çöküyordu - bu paketin CJS
+// dışa aktarımı ile esbuild'in ESM yorumlaması arasında bilinen bir uyumsuzluk.
+// Bunun yerine YAN ETKİLİ import (jsPDF.prototype'ı YAMALAR) + `doc.autoTable(...)`
+// metod çağrısı kullanılıyor - bu desen dışa aktarım şekline bağlı olmadığı
+// için bundler farklılıklarına karşı çok daha dayanıklı.
+import 'jspdf-autotable';
 
 /**
  * Bir yolculuk için PDF raporu oluşturur.
@@ -27,7 +34,7 @@ export function generateTripPdfReport(trip) {
   doc.setTextColor(100);
   doc.text(`Oluşturulma: ${new Date().toLocaleString('tr-TR')}`, 14, 25);
 
-  autoTable(doc, {
+  doc.autoTable({
     startY: 32,
     head: [['Alan', 'Değer']],
     body: [

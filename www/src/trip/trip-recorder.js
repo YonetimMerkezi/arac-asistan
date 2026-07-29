@@ -81,6 +81,24 @@ export function initTripRecorder() {
 }
 
 /**
+ * Şu an devam eden bir yolculuk varsa canlı istatistiklerini döndürür -
+ * yoksa null. Yolculuklar ekranının (trip-view.js) sürüş SIRASINDA da
+ * ilerlemeyi gösterebilmesi için eklendi - önceden bu veri hiç dışa
+ * açılmıyordu, ekran yalnızca yolculuk BİTİNCE (DB'ye yazılınca) veri
+ * gösterebiliyordu.
+ * @returns {{tripId: number, startedAt: number, distanceKm: number, maxSpeedKmh: number}|null}
+ */
+export function getActiveTripStats() {
+  if (!active) return null;
+  return {
+    tripId: active.tripId,
+    startedAt: active.startedAt,
+    distanceKm: active.distanceKm,
+    maxSpeedKmh: active.maxSpeedKmh,
+  };
+}
+
+/**
  * Kaynakları serbest bırakır (bellek sızıntısı önleme).
  */
 export function disposeTripRecorder() {

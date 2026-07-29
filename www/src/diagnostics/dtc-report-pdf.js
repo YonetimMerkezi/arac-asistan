@@ -7,7 +7,8 @@
  */
 
 import { jsPDF } from 'jspdf';
-import autoTable from 'jspdf-autotable';
+// bkz. trip/trip-report-pdf.js'teki aynı düzeltmenin notu.
+import 'jspdf-autotable';
 import { getDtcDescription } from './dtc-descriptions.js';
 
 /**
@@ -32,7 +33,7 @@ export function generateDtcPdfReport(codes, readAt) {
     return doc.output('blob');
   }
 
-  autoTable(doc, {
+  doc.autoTable({
     startY: 32,
     head: [['Kod', 'Başlık', 'Açıklama', 'Kontrol Önerisi']],
     body: codes.map((code) => {
