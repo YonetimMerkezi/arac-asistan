@@ -39,6 +39,21 @@ jobs:
           distribution: 'temurin'
           java-version: '21'
 
+      - name: Sabit debug imzalama anahtarını geri yükle
+        # DÜZELTME (kritik hata): "android/" klasörü repoda TUTULMAZ, her
+        # çalışmada sıfırdan üretilir - bu da Gradle'ın HER SEFERİNDE
+        # rastgele/yeni bir debug.keystore (imzalama sertifikası)
+        # oluşturmasına yol açıyordu. Android, farklı sertifikayla imzalanmış
+        # bir APK'yı "güncelleme" olarak KABUL ETMEZ - kullanıcı her yeni
+        # APK'da öncekini elle silmek zorunda kalıyordu. Çözüm: TEK, SABİT
+        # bir debug.keystore üretip GitHub Secrets'ta saklamak ve Gradle'ın
+        # varsayılan olarak aradığı ~/.android/debug.keystore konumuna HER
+        # ÇALIŞMADA aynısını yerleştirmek - böylece her APK AYNI sertifikayla
+        # imzalanır, kurulum "güncelleme" sayılır, silme gerekmez.
+        run: |
+          mkdir -p ~/.android
+          echo "${{ secrets.DEBUG_KEYSTORE_BASE64 }}" | base64 -d > ~/.android/debug.keystore
+
       - name: Bağımlılıkları yükle
         run: npm install --legacy-peer-deps
 
