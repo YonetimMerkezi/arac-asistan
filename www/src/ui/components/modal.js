@@ -22,9 +22,15 @@ let activeSheet = null;
  * @param {Object} options
  * @param {string} options.title - Üstte gösterilecek başlık.
  * @param {string} options.bodyHtml - İçerik HTML'i (innerHTML olarak yazılır).
- * @param {(root: HTMLElement) => void} [options.onMount] - İçerik DOM'a
- *   eklendikten hemen sonra çağrılır - içerideki düğmelere olay dinleyici
- *   bağlamak için (root, modal gövdesinin kendisidir).
+ * @param {(body: HTMLElement, helpers: {root: HTMLElement, close: () => void}) => void} [options.onMount] -
+ *   İçerik DOM'a eklendikten hemen sonra ÇAĞRILDIĞI SIRADA (openModal() henüz
+ *   DÖNMEDEN, senkron olarak) çalışır. Bu YÜZDEN modal kökü/kapama fonksiyonu
+ *   `helpers` parametresiyle DOĞRUDAN verilir - `const { root } = openModal(...)`
+ *   şeklinde DIŞARIDAKİ dönüş değerini onMount İÇİNDE kullanmaya ÇALIŞMAK
+ *   "Cannot access ... before initialization" hatasına yol açar (const/let
+ *   henüz atanmadan aynı senkron çağrı içinde okunmuş olur - bkz. bu dosyanın
+ *   düzeltme geçmişi, diagnostics-log-view.js'te tam olarak bu hataya
+ *   düşülmüştü).
  * @returns {{close: () => void, root: HTMLElement}}
  */
 export function openModal({ title, bodyHtml, onMount }) {
@@ -67,7 +73,10 @@ export function openModal({ title, bodyHtml, onMount }) {
   sheet.querySelector('[data-modal-close]')?.addEventListener('click', closeModal);
 
   const bodyRoot = sheet.querySelector('[data-modal-body]');
-  if (onMount && bodyRoot) onMount(bodyRoot);
+  // NOT: onMount, openModal DÖNMEDEN önce (senkron) çağrılır - bu yüzden
+  // root/close burada AÇIKÇA parametre olarak verilir, aşağıdaki `return`
+  // değerine güvenilmez (bkz. yukarıdaki JSDoc uyarısı).
+  if (onMount && bodyRoot) onMount(bodyRoot, { root: sheet, close: closeModal });
 
   return { close: closeModal, root: sheet };
 }
