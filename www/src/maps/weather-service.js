@@ -64,11 +64,13 @@ let cache = null;
  * Verilen konum için güncel hava durumunu getirir (15 dakikalık önbellekle).
  * @param {number} lat
  * @param {number} lon
+ * @param {boolean} [force=false] - true ise önbelleği yok sayıp yeniden çeker
+ *   (ör. kullanıcının "kaydırarak yenile" jestiyle elle istediği durumda).
  * @returns {Promise<CurrentWeather|null>}
  */
-export async function getCurrentWeather(lat, lon) {
+export async function getCurrentWeather(lat, lon, force = false) {
   const cacheKey = `${lat.toFixed(2)},${lon.toFixed(2)}`;
-  if (cache && cache.key === cacheKey && Date.now() - cache.fetchedAt < CACHE_TTL_MS) {
+  if (!force && cache && cache.key === cacheKey && Date.now() - cache.fetchedAt < CACHE_TTL_MS) {
     return cache.data;
   }
 
