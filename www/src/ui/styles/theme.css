@@ -164,6 +164,34 @@ body {
 }
 
 /**
+ * --- Global "basma tepkisi" ---
+ * "Uygulamadaki tüm butonlar basma tepkisi vermiyor" düzeltmesi: sınıf bazlı
+ * tek tek eklemek yerine HTML `button` elemanının kendisini hedefler - yeni
+ * eklenen hiçbir buton bu geri bildirimi unutamaz (Open/Closed). Daha
+ * spesifik sınıflardaki (.sda-btn gibi) kendi :active kuralları CSS
+ * özgüllüğü gereği bunun üzerine yazar, bu yüzden çakışma olmaz.
+ */
+button {
+  transition: transform 100ms ease, opacity 100ms ease;
+  -webkit-tap-highlight-color: transparent;
+}
+
+button:active {
+  transform: scale(0.96);
+  opacity: 0.8;
+}
+
+/* --- Kaydırarak yenile göstergesi için dönme animasyonu (iç ikon span'ına uygulanır) --- */
+@keyframes sda-spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+.sda-pull-indicator-icon {
+  color: var(--sda-accent);
+}
+
+/**
  * ---------------------------------------------------------------------------
  * TEMA PAKETİ STİLLERİ ("data-style" özniteliği)
  * ---------------------------------------------------------------------------
