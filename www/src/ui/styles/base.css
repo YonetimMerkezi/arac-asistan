@@ -315,6 +315,69 @@
   border-color: var(--sda-text-primary);
 }
 
+/* --- Marka filtre sekmeleri (Harita > Yakıt) --- */
+.sda-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  white-space: nowrap;
+  background: var(--sda-bg-elevated);
+  border: 1px solid var(--sda-hairline);
+  color: var(--sda-text-muted);
+  border-radius: 999px;
+  padding: 6px 14px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  flex-shrink: 0;
+}
+
+.sda-chip[aria-current='true'] {
+  color: #14171C;
+  border-color: transparent;
+}
+
+/* --- Akaryakıt fiyat kutucuğu (Benzin/Motorin/LPG) --- */
+.sda-fuel-box {
+  flex: 1;
+  min-width: 0;
+  background: var(--sda-bg-elevated);
+  border-radius: var(--sda-radius-sm);
+  padding: var(--sda-space-2);
+  text-align: center;
+}
+
+.sda-fuel-box__label {
+  font-size: 0.62rem;
+  text-transform: uppercase;
+  letter-spacing: var(--sda-letter-label);
+  color: var(--sda-text-muted);
+  display: block;
+}
+
+.sda-fuel-box__value {
+  font-family: var(--sda-font-display);
+  font-variant-numeric: tabular-nums;
+  color: var(--sda-text-primary);
+  font-size: 0.95rem;
+  display: block;
+  margin-top: 2px;
+}
+
+/* --- Renkli kategori düğmesi (Yakıt/Otopark/Servis/Hastane) --- */
+.sda-category-btn {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 6px;
+  border: none;
+  border-radius: var(--sda-radius-sm);
+  padding: var(--sda-space-2) var(--sda-space-3);
+  font-family: var(--sda-font-body);
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: #14171C;
+}
+
 /* --- Simge sistemi (icons.js) --- */
 .material-symbols-outlined {
   font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
