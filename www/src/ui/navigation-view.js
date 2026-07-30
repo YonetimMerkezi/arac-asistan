@@ -143,6 +143,9 @@ export function initNavigationView() {
         <div><p class="sda-card__label">Tahmini Yakıt</p><p data-route-fuel class="sda-card__value" style="font-size:0.95rem;">--</p></div>
         <div><p class="sda-card__label">Alternatifler</p><p data-route-alternatives class="sda-card__value" style="font-size:0.95rem;">--</p></div>
       </div>
+      <button type="button" data-open-google-maps class="sda-nav-btn" style="width:100%; margin-top:12px; background:var(--sda-accent-soft); flex-direction:row; justify-content:center; gap:8px;">
+        ${iconMarkup('map', { size: 18 })}<span>Google Haritalar'da Yol Tarifi Al</span>
+      </button>
     </div>
     <div data-gps-detail style="margin-top:8px;"></div>
     <div data-poi-list style="margin-top:8px;"></div>

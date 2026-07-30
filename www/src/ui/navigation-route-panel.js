@@ -12,6 +12,7 @@
  */
 
 import L from 'leaflet';
+import { Browser } from '@capacitor/browser';
 import { getLastPosition } from '../core/gps-tracker.js';
 import { getDrivingRoute } from '../maps/route-service.js';
 import { reverseGeocodeIlIlce } from '../maps/reverse-geocode.js';
@@ -150,9 +151,32 @@ function selectRoute(map, routes, selectedIndex, destination, container) {
     setField(summaryEl, 'route-eta', etaText);
     setField(summaryEl, 'route-fuel', 'hesaplanıyor...');
     setField(summaryEl, 'route-alternatives', routes.length > 1 ? `${routes.length - 1} tane (haritada dokun)` : 'yok');
+
+    const googleMapsButton = summaryEl.querySelector('[data-open-google-maps]');
+    if (googleMapsButton) {
+      googleMapsButton.onclick = () => {
+        void openInGoogleMaps(destination.lat, destination.lon);
+      };
+    }
   }
 
   startGuidance(selected);
+}
+
+/**
+ * Hedefe Google Haritalar'da (yüklüyse uygulama, değilse tarayıcı) yol
+ * tarifini açar - Google'ın herkese açık evrensel bağlantı biçimini
+ * kullanır, API ANAHTARI GEREKTİRMEZ, ÜCRETSİZDİR. Bu, kendi ücretsiz OSRM
+ * rota motorumuzun bazı kırsal bölgelerde ürettiği hatalı/dolambaçlı
+ * rotalara karşı GERÇEK bir alternatif sunar - Google'ın çok daha
+ * eksiksiz yol verisiyle gezinme yapılır.
+ * @param {number} lat
+ * @param {number} lon
+ * @returns {Promise<void>}
+ */
+async function openInGoogleMaps(lat, lon) {
+  const url = `https://www.google.com/maps/dir/?api=1&destination=${lat},${lon}&travelmode=driving`;
+  await Browser.open({ url });
 }
 
 /**

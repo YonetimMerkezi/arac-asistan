@@ -205,7 +205,14 @@ body.sda-fullscreen-nav [data-view="navigation"] {
   position: fixed;
   inset: 0;
   z-index: 1000;
-  padding: 0;
+  /* DÜZELTME: Üst bar (sda-topbar) tam ekranda gizleniyor ama telefonun
+     KENDİ durum çubuğu (saat/pil/sinyal ikonlarının olduğu şerit) hâlâ
+     fiziksel olarak orada duruyor - bu boşluk telafi edilmeyince harita/
+     hız kartı onun ALTINDA kalıp kesik görünüyordu ("ekranın en üstünde
+     kesik" şikayetinin gerçek sebebi buydu). env(safe-area-inset-top) bu
+     boşluğu telafi eder. */
+  padding-top: env(safe-area-inset-top, 24px);
+  padding-bottom: 0;
   overflow: hidden;
 }
 
