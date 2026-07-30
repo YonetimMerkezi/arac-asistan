@@ -11,6 +11,7 @@
 
 import { queryNearbyTaggedNodes } from './overpass-client.js';
 import { haversineDistanceKm } from '../trip/geo-utils.js';
+import { listCachedPoisByCategory } from './offline-region-store.js';
 
 /** @typedef {'parking'|'fuel'|'service'|'hospital'} PoiCategory */
 
@@ -34,10 +35,18 @@ const CATEGORY_TAGS = {
  * @property {number} lat
  * @property {number} lon
  * @property {number} distanceKm
+ * @property {boolean} [isOffline] - true ise bu sonuç CANLI ağ sorgusundan
+ *   değil, daha önce "Bölge İndir" ile indirilmiş yerel önbellekten geldi
+ *   (bkz. offline-region-store.js) - arayan taraf bunu kullanıcıya belirtebilir.
  */
 
 /**
  * Verilen kategoride, konuma en yakın POI'leri döndürür (yakınlığa göre sıralı).
+ *
+ * Canlı ağ sorgusu boş dönerse (tipik nedeni: internet yok) SESSİZCE
+ * offline-region-store.js'teki yerel önbelleğe düşülür - kullanıcı önceden
+ * o bölgeyi "Bölge İndir" ile indirmişse sonuçlar yine de gösterilir (yalnızca
+ * `isOffline: true` işaretlenir, arayan bunu görsel olarak belirtebilir).
  * @param {PoiCategory} category
  * @param {number} lat
  * @param {number} lon
@@ -51,7 +60,7 @@ export async function findNearbyPoi(category, lat, lon, radiusMeters = 5000) {
 
   const elements = await queryNearbyTaggedNodes(lat, lon, radiusMeters, tagKey, tagValue);
 
-  return elements
+  const liveResults = elements
     .filter((el) => typeof el.lat === 'number' && typeof el.lon === 'number')
     .map((el) => ({
       id: el.id ?? null,
@@ -61,6 +70,37 @@ export async function findNearbyPoi(category, lat, lon, radiusMeters = 5000) {
       lon: el.lon,
       distanceKm: haversineDistanceKm(lat, lon, el.lat, el.lon),
     }))
+    .sort((a, b) => a.distanceKm - b.distanceKm);
+
+  if (liveResults.length > 0) return liveResults;
+
+  return findCachedNearbyPoi(category, lat, lon, radiusMeters);
+}
+
+/**
+ * Canlı sorgu boş döndüğünde çağrılan çevrimdışı yedek - önceden indirilmiş
+ * bölgelerin POI önbelleğinde, verilen yarıçap içindeki noktaları arar.
+ * @param {PoiCategory} category
+ * @param {number} lat
+ * @param {number} lon
+ * @param {number} radiusMeters
+ * @returns {Promise<PoiResult[]>}
+ */
+async function findCachedNearbyPoi(category, lat, lon, radiusMeters) {
+  const cached = await listCachedPoisByCategory(category);
+  const radiusKm = radiusMeters / 1000;
+
+  return cached
+    .map((poi) => ({
+      id: poi.id,
+      name: poi.name ?? defaultNameFor(category),
+      brand: poi.brand ?? null,
+      lat: poi.lat,
+      lon: poi.lon,
+      distanceKm: haversineDistanceKm(lat, lon, poi.lat, poi.lon),
+      isOffline: true,
+    }))
+    .filter((poi) => poi.distanceKm <= radiusKm)
     .sort((a, b) => a.distanceKm - b.distanceKm);
 }
 

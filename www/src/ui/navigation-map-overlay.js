@@ -55,7 +55,7 @@ export function bindLiveSpeedLimitCard(container) {
     speedEl.textContent = displaySpeed !== null ? String(Math.round(displaySpeed)) : '--';
 
     const exceeding = lastLimit !== null && displaySpeed !== null && displaySpeed > lastLimit;
-    speedEl.style.color = exceeding ? 'var(--sda-danger)' : 'var(--sda-text-primary)';
+    speedEl.style.color = exceeding ? '#FF5A5F' : '#ffffff'; // Kadranın arka planı (bkz. navigation-view.js) her zaman koyu - tema rengine değil, sabit kontrast rengine bağlı kalınır.
   };
 
   const updateObdSpeed = () => {
@@ -128,10 +128,11 @@ export function bindFullscreenToggle(container, map) {
     if (fullscreen) {
       mapWrapper.appendChild(bottomStack);
       bottomStack.appendChild(speedCard);
-      // Kompakt: artık tam genişlik değil, küçük bir rozet gibi - kendi
-      // içeriği kadar yer kaplar, `pointer-events` yeniden açılır (üst
-      // kapsayıcı etkileşimi kapatıyor, kart kendi dokunuşlarını almalı).
-      speedCard.style.cssText = 'display:flex; align-items:center; gap:10px; margin:0; padding:8px 14px; background:var(--sda-bg-elevated); border-radius:999px; box-shadow:var(--sda-shadow-elevated); pointer-events:auto;';
+      // Radarbot referansı: iki daire (hız kadranı + limit rozeti) haritanın
+      // ÜZERİNDE doğrudan durur, aralarında/etrafında ayrı bir "kart" zemini
+      // YOKTUR - önceki sürümdeki dolgulu hap (pill) arka planı kaldırıldı,
+      // yalnızca konumlama ve tıklanabilirlik (`pointer-events`) korunuyor.
+      speedCard.style.cssText = 'display:flex; align-items:center; gap:10px; margin:0; padding:0; background:transparent; box-shadow:none; pointer-events:auto;';
 
       if (statusEl) {
         statusEl.style.cssText = 'display:none;'; // Rota özeti kartı görünürken bu satır zaten boş - saklıyoruz.
@@ -153,7 +154,7 @@ export function bindFullscreenToggle(container, map) {
       } else {
         originalSpeedCardParent.appendChild(speedCard);
       }
-      speedCard.style.cssText = 'display:flex; align-items:center; gap:12px; margin-bottom:8px;';
+      speedCard.style.cssText = 'display:flex; align-items:center; gap:10px; margin-bottom:8px;';
       if (statusEl) statusEl.setAttribute('style', originalStatusStyle);
 
       if (summaryEl && originalSummaryParent) {
