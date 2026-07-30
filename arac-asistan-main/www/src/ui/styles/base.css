@@ -1,0 +1,395 @@
+/**
+ * base.css
+ * ---------------------------------------------------------------------------
+ * Smart Drive AI - Temel Yerleşim ve Bileşen Kalıpları
+ *
+ * theme.css'teki tokenlar üzerine kurulu, tema-bağımsız yapısal kurallar.
+ * Buradaki hiçbir kural sabit renk/boyut değeri içermez; tamamı
+ * var(--sda-*) token'larına referans verir.
+ *
+ * YATAY/DİKEY DUYARLILIK: #app-root bir CSS Grid'dir. Dikeyde (portrait)
+ * üç satır (header/main/nav) üst üste; yatayda (landscape) nav bir yan
+ * sütuna kayar. Bu DOM sırasını değiştirmez - yalnızca grid-template-areas
+ * tanımı değişir, bu yüzden index.html'deki <header>/<main>/<nav> sırası
+ * hiçbir zaman değiştirilmemelidir.
+ * ---------------------------------------------------------------------------
+ */
+
+#app-root {
+  display: grid;
+  grid-template-areas:
+    "header"
+    "main"
+    "nav";
+  grid-template-rows: auto 1fr auto;
+  grid-template-columns: 1fr;
+  height: 100dvh;
+  width: 100%;
+  overflow: hidden;
+}
+
+#app-root > .sda-topbar {
+  grid-area: header;
+}
+
+#app-root > main {
+  grid-area: main;
+  min-height: 0;
+  min-width: 0;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+#app-root > .sda-bottom-nav {
+  grid-area: nav;
+}
+
+/* Yatay (landscape): nav sol yan sütuna kayar, thumb ile ulaşımı korumak
+   ve dikey alanı israf etmemek için. */
+@media (orientation: landscape) {
+  #app-root {
+    grid-template-areas:
+      "header header"
+      "nav main";
+    grid-template-columns: 84px 1fr;
+    grid-template-rows: auto 1fr;
+  }
+
+  #app-root > .sda-bottom-nav {
+    flex-direction: column;
+    justify-content: flex-start;
+    gap: var(--sda-space-2);
+    padding: var(--sda-space-3) 0;
+    border-top: none;
+    border-right: 1px solid var(--sda-hairline);
+    overflow-y: auto;
+  }
+
+  /* Dashboard/form ızgaraları yatayda daha fazla sütun kullanabilir. */
+  .sda-grid {
+    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  }
+}
+
+/* Durum çubuğu güvenli alanı (Android status bar) */
+.sda-safe-top {
+  padding-top: env(safe-area-inset-top, 0px);
+}
+
+.sda-safe-bottom {
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+}
+
+/* --- Üst bilgi çubuğu --- */
+.sda-topbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--sda-space-3) var(--sda-space-4);
+  background: var(--sda-bg-surface);
+  border-bottom: 1px solid var(--sda-hairline);
+}
+
+.sda-topbar__title {
+  font-size: var(--sda-fs-body);
+  font-weight: 600;
+  letter-spacing: var(--sda-letter-label);
+}
+
+.sda-status-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--sda-text-faint);
+  transition: background var(--sda-motion-base) var(--sda-motion-ease);
+}
+
+.sda-status-dot[data-state='connected'] {
+  background: var(--sda-success);
+  box-shadow: 0 0 0 4px color-mix(in srgb, var(--sda-success) 20%, transparent);
+}
+
+.sda-status-dot[data-state='error'] {
+  background: var(--sda-danger);
+}
+
+/* --- İçerik alanı --- */
+.sda-view {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: var(--sda-space-4);
+  padding-bottom: calc(var(--sda-space-6) * 2);
+}
+
+.sda-view[hidden] {
+  display: none;
+}
+
+/* --- Kart bileşeni: tüm gösterge/veri kartlarının temeli --- */
+.sda-card {
+  background: var(--sda-bg-surface);
+  border: 1px solid var(--sda-hairline);
+  border-radius: var(--sda-radius-md);
+  padding: var(--sda-space-4);
+}
+
+.sda-card--elevated {
+  background: var(--sda-bg-elevated);
+  box-shadow: var(--sda-shadow-elevated);
+}
+
+.sda-card__label {
+  font-family: var(--sda-font-body);
+  font-size: var(--sda-fs-label);
+  text-transform: uppercase;
+  letter-spacing: var(--sda-letter-label);
+  color: var(--sda-text-muted);
+  margin: 0 0 var(--sda-space-2) 0;
+}
+
+.sda-card__value {
+  font-family: var(--sda-font-display);
+  font-variant-numeric: tabular-nums;
+  color: var(--sda-text-primary);
+}
+
+.sda-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: var(--sda-space-3);
+}
+
+/* --- Form elemanları (Faz 9'da eksik kalan; Ayarlar/Yakıt/Bakım formları
+   şimdiye kadar tarayıcı varsayılanıyla görünüyordu) --- */
+.sda-input,
+.sda-select {
+  background: var(--sda-bg-elevated);
+  border: 1px solid var(--sda-hairline);
+  border-radius: var(--sda-radius-sm);
+  color: var(--sda-text-primary);
+  font-family: var(--sda-font-body);
+  font-size: var(--sda-fs-body);
+  padding: var(--sda-space-3);
+  width: 100%;
+}
+
+.sda-input::placeholder {
+  color: var(--sda-text-faint);
+}
+
+.sda-input:focus,
+.sda-select:focus {
+  outline: none;
+  border-color: var(--sda-accent);
+}
+
+/* --- Birincil/ikincil aksiyon butonları (nav butonundan ayrı - form/ekran
+   içi aksiyonlar için, ör. "Kaydet", "Ekle") --- */
+.sda-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--sda-space-2);
+  border: none;
+  border-radius: var(--sda-radius-sm);
+  padding: var(--sda-space-3) var(--sda-space-4);
+  font-family: var(--sda-font-body);
+  font-weight: 600;
+  font-size: var(--sda-fs-body);
+  cursor: pointer;
+  transition: transform var(--sda-motion-fast) var(--sda-motion-ease),
+              opacity var(--sda-motion-fast) var(--sda-motion-ease);
+}
+
+.sda-btn:active {
+  transform: scale(0.98);
+}
+
+.sda-btn--primary {
+  background: var(--sda-accent);
+  color: var(--sda-bg-base);
+}
+
+.sda-btn--secondary {
+  background: var(--sda-accent-soft);
+  color: var(--sda-accent);
+}
+
+.sda-btn--danger {
+  background: var(--sda-danger-soft);
+  color: var(--sda-danger);
+}
+
+.sda-btn--ghost {
+  background: none;
+  color: var(--sda-accent);
+  padding: var(--sda-space-2);
+}
+
+/* --- Alt gezinme çubuğu --- */
+.sda-bottom-nav {
+  display: flex;
+  justify-content: space-around;
+  align-items: center;
+  background: var(--sda-bg-surface);
+  border-top: 1px solid var(--sda-hairline);
+  padding: var(--sda-space-2) 0;
+}
+
+.sda-nav-btn {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  background: none;
+  border: none;
+  color: var(--sda-text-muted);
+  font-family: var(--sda-font-body);
+  font-size: 0.68rem;
+  letter-spacing: var(--sda-letter-label);
+  padding: var(--sda-space-2) var(--sda-space-3);
+  border-radius: var(--sda-radius-sm);
+  transition: color var(--sda-motion-fast) var(--sda-motion-ease),
+              background var(--sda-motion-fast) var(--sda-motion-ease);
+}
+
+.sda-nav-btn[aria-current='page'] {
+  color: var(--sda-accent);
+  background: var(--sda-accent-soft);
+}
+
+.sda-nav-btn:active {
+  transform: scale(0.96);
+}
+
+/* --- Boş durum (empty state) --- */
+.sda-empty-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  gap: var(--sda-space-2);
+  padding: var(--sda-space-6) var(--sda-space-4);
+  color: var(--sda-text-muted);
+}
+
+.sda-empty-state__title {
+  font-family: var(--sda-font-body);
+  font-weight: 600;
+  color: var(--sda-text-primary);
+  font-size: var(--sda-fs-body);
+}
+
+/* --- Widget düzenleme modu (Panel özelleştirme) --- */
+.sda-widget-card {
+  position: relative;
+}
+
+.sda-widget-card__controls {
+  display: flex;
+  gap: var(--sda-space-2);
+  margin-top: var(--sda-space-2);
+}
+
+.sda-widget-card__controls button {
+  background: var(--sda-bg-elevated-hover);
+  border: 1px solid var(--sda-hairline);
+  color: var(--sda-text-primary);
+  border-radius: var(--sda-radius-sm);
+  padding: 4px 10px;
+  font-size: 0.75rem;
+}
+
+.sda-color-swatch {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  border: 2px solid transparent;
+  display: inline-block;
+}
+
+.sda-color-swatch[aria-current='true'] {
+  border-color: var(--sda-text-primary);
+}
+
+/* --- Marka filtre sekmeleri (Harita > Yakıt) --- */
+.sda-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  white-space: nowrap;
+  background: var(--sda-bg-elevated);
+  border: 1px solid var(--sda-hairline);
+  color: var(--sda-text-muted);
+  border-radius: 999px;
+  padding: 6px 14px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  flex-shrink: 0;
+}
+
+.sda-chip[aria-current='true'] {
+  color: #14171C;
+  border-color: transparent;
+}
+
+/* --- Akaryakıt fiyat kutucuğu (Benzin/Motorin/LPG) --- */
+.sda-fuel-box {
+  flex: 1;
+  min-width: 0;
+  background: var(--sda-bg-elevated);
+  border-radius: var(--sda-radius-sm);
+  padding: var(--sda-space-2);
+  text-align: center;
+}
+
+.sda-fuel-box__label {
+  font-size: 0.62rem;
+  text-transform: uppercase;
+  letter-spacing: var(--sda-letter-label);
+  color: var(--sda-text-muted);
+  display: block;
+}
+
+.sda-fuel-box__value {
+  font-family: var(--sda-font-display);
+  font-variant-numeric: tabular-nums;
+  color: var(--sda-text-primary);
+  font-size: 0.95rem;
+  display: block;
+  margin-top: 2px;
+}
+
+/* --- Renkli kategori düğmesi (Yakıt/Otopark/Servis/Hastane) --- */
+.sda-category-btn {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 6px;
+  border: none;
+  border-radius: var(--sda-radius-sm);
+  padding: var(--sda-space-2) var(--sda-space-3);
+  font-family: var(--sda-font-body);
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: #14171C;
+}
+
+/* --- Simge sistemi (icons.js) --- */
+.material-symbols-outlined {
+  font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+  vertical-align: middle;
+  line-height: 1;
+}
+
+.sda-icon {
+  display: inline-flex;
+  color: currentColor;
+}
+
+.sda-nav-btn .sda-icon {
+  font-size: 22px !important;
+}
