@@ -8,14 +8,13 @@
  * birleştirilerek tek bir rota çizilir (route-service.js'in çoklu nokta
  * desteğiyle - bkz. getMultiPointRoute).
  *
- * navigation-view.js'ten AYRI tutuldu (kod standardı: dosya başına maks.
- * 500 satır) - bu, "harita üzerinde bağımsız bir etkileşim modu" olduğu
- * için doğal bir ayrım noktası.
+ * DÜZELTME: Önceki sürümde yanlışlıkla eklenen bir noktayı SİLMENİN hiçbir
+ * yolu yoktu - modu tamamen kapatıp her şeyi silmek zorunda kalıyordunuz.
+ * Artık "Son Noktayı Sil" (undo) ve "Tümünü Temizle" ayrı düğmeler.
  * ---------------------------------------------------------------------------
  */
 
 import L from 'leaflet';
-import { iconMarkup } from './icons.js';
 import { getMultiPointRoute } from '../maps/route-service.js';
 import { startGuidance } from '../maps/turn-by-turn.js';
 import { logWarn } from '../core/logger.js';
@@ -33,30 +32,45 @@ let tapRouteLine = null;
 let modeActive = false;
 
 /**
- * "Noktayla Rota" düğmesini ve haritaya dokunma dinleyicisini bağlar.
+ * "Noktayla Rota" düğmesini, haritaya dokunma dinleyicisini ve sil/temizle
+ * düğmelerini bağlar.
  * @param {HTMLElement} container
  * @param {import('leaflet').Map} map
  */
 export function bindTapRouteMode(container, map) {
   const toggleButton = container.querySelector('[data-tap-route-toggle]');
+  const controlsEl = container.querySelector('[data-tap-route-controls]');
+  const undoButton = container.querySelector('[data-tap-route-undo]');
+  const clearButton = container.querySelector('[data-tap-route-clear]');
   const statusEl = container.querySelector('[data-status]');
   if (!toggleButton) return;
 
   toggleButton.addEventListener('click', () => {
     modeActive = !modeActive;
+    // Mod AÇIKKEN düğme belirgin şekilde vurgulanır - "bu mod şu an aktif,
+    // haritaya dokunabilirsin" net görülsün diye (önceki sürümde bu ayrım
+    // belirsizdi).
     toggleButton.style.background = modeActive ? 'var(--sda-accent)' : 'var(--sda-bg-elevated)';
+    toggleButton.style.color = modeActive ? 'white' : '';
 
     if (!modeActive) {
-      clearTapRoute(map);
-      if (statusEl) statusEl.textContent = '';
-    } else {
-      if (statusEl) statusEl.textContent = 'Haritaya dokunarak durak ekleyin (en az 2 nokta).';
+      clearAll(map, statusEl, controlsEl);
+    } else if (statusEl) {
+      statusEl.textContent = 'Haritaya dokunarak durak ekleyin (en az 2 nokta).';
     }
+  });
+
+  undoButton?.addEventListener('click', () => {
+    undoLastWaypoint(map, statusEl, controlsEl);
+  });
+
+  clearButton?.addEventListener('click', () => {
+    clearAll(map, statusEl, controlsEl);
   });
 
   map.on('click', (event) => {
     if (!modeActive) return;
-    addWaypoint(map, event.latlng, statusEl);
+    addWaypoint(map, event.latlng, statusEl, controlsEl);
   });
 }
 
@@ -64,8 +78,9 @@ export function bindTapRouteMode(container, map) {
  * @param {import('leaflet').Map} map
  * @param {import('leaflet').LatLng} latlng
  * @param {HTMLElement|null} statusEl
+ * @param {HTMLElement|null} controlsEl
  */
-function addWaypoint(map, latlng, statusEl) {
+function addWaypoint(map, latlng, statusEl, controlsEl) {
   const point = { lat: latlng.lat, lon: latlng.lng };
   waypoints.push(point);
 
@@ -79,10 +94,41 @@ function addWaypoint(map, latlng, statusEl) {
   }).addTo(map);
   waypointMarkers.push(marker);
 
+  if (controlsEl) controlsEl.style.display = 'flex';
+
   if (waypoints.length >= 2) {
     void drawTapRoute(map, statusEl);
   } else if (statusEl) {
-    statusEl.textContent = `1 durak eklendi - en az bir tane daha ekleyin.`;
+    statusEl.textContent = '1 durak eklendi - en az bir tane daha ekleyin.';
+  }
+}
+
+/**
+ * Son eklenen noktayı kaldırır - yanlışlıkla yanlış yere dokunulduğunda
+ * her şeyi silmeye gerek kalmadan düzeltme imkânı verir.
+ * @param {import('leaflet').Map} map
+ * @param {HTMLElement|null} statusEl
+ * @param {HTMLElement|null} controlsEl
+ */
+function undoLastWaypoint(map, statusEl, controlsEl) {
+  if (waypoints.length === 0) return;
+
+  waypoints.pop();
+  const lastMarker = waypointMarkers.pop();
+  if (lastMarker) map.removeLayer(lastMarker);
+
+  if (tapRouteLine) {
+    map.removeLayer(tapRouteLine);
+    tapRouteLine = null;
+  }
+
+  if (waypoints.length === 0) {
+    if (controlsEl) controlsEl.style.display = 'none';
+    if (statusEl) statusEl.textContent = 'Haritaya dokunarak durak ekleyin (en az 2 nokta).';
+  } else if (waypoints.length === 1) {
+    if (statusEl) statusEl.textContent = '1 durak eklendi - en az bir tane daha ekleyin.';
+  } else {
+    void drawTapRoute(map, statusEl);
   }
 }
 
@@ -117,8 +163,10 @@ async function drawTapRoute(map, statusEl) {
 
 /**
  * @param {import('leaflet').Map} map
+ * @param {HTMLElement|null} statusEl
+ * @param {HTMLElement|null} controlsEl
  */
-function clearTapRoute(map) {
+function clearAll(map, statusEl, controlsEl) {
   waypointMarkers.forEach((marker) => map.removeLayer(marker));
   waypointMarkers = [];
   waypoints = [];
@@ -126,4 +174,6 @@ function clearTapRoute(map) {
     map.removeLayer(tapRouteLine);
     tapRouteLine = null;
   }
+  if (controlsEl) controlsEl.style.display = 'none';
+  if (statusEl) statusEl.textContent = '';
 }

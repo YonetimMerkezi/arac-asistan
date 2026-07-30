@@ -67,7 +67,12 @@ export function openAddressSearchModal(map, container) {
         runSearch(destinationInput.value, destinationResultsEl, (suggestion) => {
           const shortLabel = suggestion.label.split(',')[0];
           close();
-          void drawRouteTo(map, { lat: suggestion.lat, lon: suggestion.lon, label: shortLabel }, container, selectedOrigin);
+          void drawRouteTo(
+            map,
+            { lat: suggestion.lat, lon: suggestion.lon, label: shortLabel, searchQuery: suggestion.label },
+            container,
+            selectedOrigin,
+          );
         });
       }, DEBOUNCE_MS);
     });

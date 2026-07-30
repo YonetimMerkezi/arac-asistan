@@ -16,6 +16,7 @@
  * ---------------------------------------------------------------------------
  */
 
+import L from 'leaflet';
 import { iconMarkup } from './icons.js';
 import { onPosition } from '../core/gps-tracker.js';
 import { getSpeedLimitNear } from '../maps/speed-limit-service.js';
@@ -129,4 +130,36 @@ export function bindFullscreenToggle(container, map) {
 
   onNavFullscreenChange(applyState);
   applyState(isNavFullscreen()); // Ekrana ilk girişte (ör. geri tuşuyla tam ekrandan çıkılmış olabilir) tutarlı başlangıç durumu.
+}
+
+/**
+ * Uydu görünümü düğmesini bağlar - Esri'nin ücretsiz, API anahtarı
+ * gerektirmeyen görüntü servisi (yalnızca düğmeye basılınca yüklenir,
+ * varsayılan katman hâlâ sokak haritasıdır - gereksiz veri kullanımı olmasın).
+ * @param {HTMLElement} container
+ * @param {import('leaflet').Map} map
+ * @param {import('leaflet').TileLayer} streetLayer - Zaten haritaya eklenmiş sokak katmanı.
+ */
+export function bindSatelliteToggle(container, map, streetLayer) {
+  const satelliteButton = container.querySelector('[data-satellite-toggle]');
+  if (!satelliteButton) return;
+
+  const satelliteLayer = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
+    attribution: 'Kaynak: Esri, Maxar, Earthstar Geographics',
+    maxZoom: 19,
+  });
+
+  let satelliteActive = false;
+  satelliteButton.addEventListener('click', () => {
+    satelliteActive = !satelliteActive;
+    if (satelliteActive) {
+      map.removeLayer(streetLayer);
+      satelliteLayer.addTo(map);
+      satelliteButton.innerHTML = iconMarkup('map', { size: 20 });
+    } else {
+      map.removeLayer(satelliteLayer);
+      streetLayer.addTo(map);
+      satelliteButton.innerHTML = iconMarkup('satellite', { size: 20 });
+    }
+  });
 }

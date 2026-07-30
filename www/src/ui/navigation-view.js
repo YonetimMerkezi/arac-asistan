@@ -27,8 +27,8 @@ import { findNearbyPoi } from '../maps/poi-search.js';
 import { getFavoriteLocation, setFavoriteLocation } from '../maps/favorites-store.js';
 import { reverseGeocodeIlIlce } from '../maps/reverse-geocode.js';
 import { getFuelPrices } from '../maps/fuel-price-service.js';
-import { drawRouteTo } from './navigation-route-panel.js';
-import { bindLiveSpeedLimitCard, bindFullscreenToggle } from './navigation-map-overlay.js';
+import { drawRouteTo, openGoogleMapsGeneral } from './navigation-route-panel.js';
+import { bindLiveSpeedLimitCard, bindFullscreenToggle, bindSatelliteToggle } from './navigation-map-overlay.js';
 import { bindTapRouteMode } from './navigation-tap-route.js';
 import { openAddressSearchModal } from './components/address-search-modal.js';
 import { getFuelStationCache, onFuelStationCacheUpdate, forceRefreshFuelStationCache } from '../maps/fuel-station-cache.js';
@@ -101,6 +101,9 @@ export function initNavigationView() {
       <button type="button" data-address-search class="sda-btn sda-btn--primary" style="width:100%; margin-bottom:8px;">
         ${iconMarkup('search', { size: 18 })} Nereye Gidiyorsun? (Adres Ara)
       </button>
+      <button type="button" data-open-google-maps-general class="sda-nav-btn" style="width:100%; margin-bottom:8px; background:var(--sda-bg-elevated); flex-direction:row; justify-content:center; gap:8px;">
+        ${iconMarkup('map', { size: 18 })}<span>Google Haritalar'ı Doğrudan Aç</span>
+      </button>
       <div style="display:grid; grid-template-columns:repeat(3, 1fr); gap:8px; margin-bottom:8px;">
         <button type="button" data-quick="home" class="sda-nav-btn" style="background:var(--sda-accent-soft); flex-direction:row; gap:4px; justify-content:center;">${iconMarkup('home', { size: 16 })}<span>Eve Git</span></button>
         <button type="button" data-quick="work" class="sda-nav-btn" style="background:var(--sda-accent-soft); flex-direction:row; gap:4px; justify-content:center;">${iconMarkup('work', { size: 16 })}<span>İşe Git</span></button>
@@ -121,19 +124,26 @@ export function initNavigationView() {
     </div>
     <div data-map-wrapper style="position:relative;">
       <div data-map style="height: 48vh; border-radius: var(--sda-radius-md); overflow:hidden;"></div>
-      <div style="position:absolute; top:8px; right:8px; z-index:5; display:flex; flex-direction:column; gap:6px;">
-        <button type="button" data-fullscreen-toggle class="sda-nav-btn" style="background:var(--sda-bg-elevated); padding:8px;">
+      <div style="position:absolute; top:8px; right:8px; z-index:1200; display:flex; flex-direction:column; gap:6px;">
+        <button type="button" data-fullscreen-toggle class="sda-nav-btn" style="background:var(--sda-bg-elevated); padding:8px; box-shadow:var(--sda-shadow-elevated);">
           ${iconMarkup('fullscreen', { size: 20 })}
         </button>
-        <button type="button" data-satellite-toggle class="sda-nav-btn" style="background:var(--sda-bg-elevated); padding:8px;">
+        <button type="button" data-satellite-toggle class="sda-nav-btn" style="background:var(--sda-bg-elevated); padding:8px; box-shadow:var(--sda-shadow-elevated);">
           ${iconMarkup('satellite', { size: 20 })}
         </button>
-        <button type="button" data-tap-route-toggle class="sda-nav-btn" style="background:var(--sda-bg-elevated); padding:8px;">
-          ${iconMarkup('location', { size: 20 })}
+        <button type="button" data-tap-route-toggle title="Haritaya dokunarak nokta nokta rota oluştur" class="sda-nav-btn" style="background:var(--sda-bg-elevated); padding:8px; box-shadow:var(--sda-shadow-elevated);">
+          ${iconMarkup('add-location', { size: 20 })}
         </button>
+      </div>
+      <div data-tap-route-controls style="display:none; position:absolute; bottom:8px; left:8px; right:8px; z-index:1200; gap:8px;">
+        <button type="button" data-tap-route-undo class="sda-nav-btn" style="flex:1; background:var(--sda-bg-elevated); box-shadow:var(--sda-shadow-elevated);">Son Noktayı Sil</button>
+        <button type="button" data-tap-route-clear class="sda-nav-btn" style="flex:1; background:var(--sda-danger-soft); box-shadow:var(--sda-shadow-elevated);">Tümünü Temizle</button>
       </div>
     </div>
     <p data-status class="sda-card__label" style="margin-top:8px;"></p>
+    <button type="button" data-open-google-maps class="sda-nav-btn" style="display:none; width:100%; margin-top:8px; background:var(--sda-accent-soft); flex-direction:row; justify-content:center; gap:8px;">
+      ${iconMarkup('map', { size: 18 })}<span>Google Haritalar'da Yol Tarifi Al</span>
+    </button>
     <div data-route-summary class="sda-card sda-card--elevated" style="display:none; margin-top:8px;">
       <div style="display:grid; grid-template-columns:repeat(2, 1fr); gap:10px;">
         <div><p class="sda-card__label">Hedef</p><p data-route-destination class="sda-card__value" style="font-size:0.95rem;">--</p></div>
@@ -143,9 +153,6 @@ export function initNavigationView() {
         <div><p class="sda-card__label">Tahmini Yakıt</p><p data-route-fuel class="sda-card__value" style="font-size:0.95rem;">--</p></div>
         <div><p class="sda-card__label">Alternatifler</p><p data-route-alternatives class="sda-card__value" style="font-size:0.95rem;">--</p></div>
       </div>
-      <button type="button" data-open-google-maps class="sda-nav-btn" style="width:100%; margin-top:12px; background:var(--sda-accent-soft); flex-direction:row; justify-content:center; gap:8px;">
-        ${iconMarkup('map', { size: 18 })}<span>Google Haritalar'da Yol Tarifi Al</span>
-      </button>
     </div>
     <div data-gps-detail style="margin-top:8px;"></div>
     <div data-poi-list style="margin-top:8px;"></div>
@@ -154,33 +161,21 @@ export function initNavigationView() {
 
   map = L.map(container.querySelector('[data-map]')).setView(DEFAULT_CENTER, 6);
 
+  // DÜZELTME: Harita bazen kısmen GRİ/BOŞ görünüyordu - Leaflet, konteynerin
+  // boyutunu SAYFA DÜZENİ TAM OTURMADAN ÖNCE ölçüyordu (üstteki yeni harita
+  // düğmeleri sayfanın toplam yüksekliğini değiştirdiği için), bu yüzden
+  // döşeme (tile) ızgarasını olduğundan küçük hesaplayıp kenarları boş
+  // bırakıyordu. Düzen kesinlikle oturduktan sonra yeniden ölçmeye
+  // ZORLANIYOR.
+  setTimeout(() => map?.invalidateSize(), 200);
+  setTimeout(() => map?.invalidateSize(), 600);
+
   const streetLayer = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
     attribution: '© OpenStreetMap katkıda bulunanlar',
     maxZoom: 19,
   }).addTo(map);
 
-  // Uydu görünümü: Esri'nin ücretsiz, API anahtarı gerektirmeyen görüntü
-  // servisi - yalnızca "Uydu" düğmesine basılınca yüklenir (varsayılan
-  // katman hâlâ sokak haritasıdır), gereksiz veri kullanımı olmasın diye.
-  const satelliteLayer = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
-    attribution: 'Kaynak: Esri, Maxar, Earthstar Geographics',
-    maxZoom: 19,
-  });
-
-  let satelliteActive = false;
-  const satelliteButton = container.querySelector('[data-satellite-toggle]');
-  satelliteButton?.addEventListener('click', () => {
-    satelliteActive = !satelliteActive;
-    if (satelliteActive) {
-      map.removeLayer(streetLayer);
-      satelliteLayer.addTo(map);
-      satelliteButton.innerHTML = iconMarkup('map', { size: 20 });
-    } else {
-      map.removeLayer(satelliteLayer);
-      streetLayer.addTo(map);
-      satelliteButton.innerHTML = iconMarkup('satellite', { size: 20 });
-    }
-  });
+  bindSatelliteToggle(container, map, streetLayer);
 
   onPosition(updateVehicleMarker);
   const last = getLastPosition();
@@ -204,6 +199,12 @@ export function initNavigationView() {
 
   container.querySelector('[data-address-search]')?.addEventListener('click', () => {
     openAddressSearchModal(map, container);
+  });
+
+  container.querySelector('[data-open-google-maps-general]')?.addEventListener('click', () => {
+    const current = getLastPosition();
+    const center = current ? [current.latitude, current.longitude] : DEFAULT_CENTER;
+    void openGoogleMapsGeneral(center[0], center[1]);
   });
 
   // "Kaydırarak yenile" - yakıt istasyonu önbelleğini zorla tazeler; Yakıt

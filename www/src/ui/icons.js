@@ -24,6 +24,7 @@ const ICON_MAP = {
   trip: 'route',
   map: 'map',
   satellite: 'satellite_alt',
+  'add-location': 'add_location_alt',
   fuel: 'local_gas_station',
   diagnostics: 'build',
   analytics: 'auto_awesome',

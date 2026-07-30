@@ -41,7 +41,20 @@ export async function drawRouteTo(map, destination, container, origin = null) {
   const current = origin ?? getLastPosition();
   const statusEl = container.querySelector('[data-status]');
   const summaryEl = container.querySelector('[data-route-summary]');
+  const googleMapsButton = container.querySelector('[data-open-google-maps]');
   if (summaryEl) summaryEl.style.display = 'none';
+
+  // DÜZELTME: Google Haritalar düğmesi ÖNCEDEN yalnızca BİZİM OSRM rotamız
+  // BAŞARILI olursa görünürdü - tam da rotamızın hatalı/dolambaçlı çıktığı
+  // (kullanıcının Bingöl-Genç örneğinde bildirdiği) durumlarda kullanıcının
+  // en çok ihtiyaç duyduğu an buydu. Artık hedef BELLİ OLUR OLMAZ, bizim
+  // rotamız başarılı olsun olmasın, hemen görünür ve o hedefe göre çalışır.
+  if (googleMapsButton) {
+    googleMapsButton.style.display = 'flex';
+    googleMapsButton.onclick = () => {
+      void openInGoogleMaps(destination.lat, destination.lon, destination.searchQuery);
+    };
+  }
 
   if (!current) {
     if (statusEl) statusEl.textContent = 'Konum henüz alınamadı.';
@@ -56,7 +69,7 @@ export async function drawRouteTo(map, destination, container, origin = null) {
   );
 
   if (!routes || routes.length === 0) {
-    if (statusEl) statusEl.textContent = 'Rota alınamadı (internet bağlantınızı kontrol edin).';
+    if (statusEl) statusEl.textContent = 'Rota alınamadı (internet bağlantınızı kontrol edin). Google Haritalar\'ı deneyebilirsiniz.';
     return;
   }
 
@@ -151,13 +164,6 @@ function selectRoute(map, routes, selectedIndex, destination, container) {
     setField(summaryEl, 'route-eta', etaText);
     setField(summaryEl, 'route-fuel', 'hesaplanıyor...');
     setField(summaryEl, 'route-alternatives', routes.length > 1 ? `${routes.length - 1} tane (haritada dokun)` : 'yok');
-
-    const googleMapsButton = summaryEl.querySelector('[data-open-google-maps]');
-    if (googleMapsButton) {
-      googleMapsButton.onclick = () => {
-        void openInGoogleMaps(destination.lat, destination.lon);
-      };
-    }
   }
 
   startGuidance(selected);
@@ -174,8 +180,41 @@ function selectRoute(map, routes, selectedIndex, destination, container) {
  * @param {number} lon
  * @returns {Promise<void>}
  */
-async function openInGoogleMaps(lat, lon) {
-  const url = `https://www.google.com/maps/dir/?api=1&destination=${lat},${lon}&travelmode=driving`;
+/**
+ * Hedefe Google Haritalar'da (yüklüyse uygulama, değilse tarayıcı) yol
+ * tarifini açar - Google'ın herkese açık evrensel bağlantı biçimini
+ * kullanır, API ANAHTARI GEREKTİRMEZ, ÜCRETSİZDİR.
+ *
+ * İSİM TERCİH EDİLİR (koordinat değil): Kullanıcı "Genç" gibi bir yer adı
+ * yazıp aratmışsa, Google Haritalar'a o İSMİ gönderiyoruz - Google KENDİ
+ * coğrafi kodlamasını yapıyor. Bu, bizim Nominatim/OSRM zincirimizin
+ * ürettiği yaklaşık koordinatlara güvenmek yerine, Google'ın çok daha
+ * eksiksiz yer veritabanını kullanmasını sağlar - "yazdığım isme göre
+ * geçsin" isteğinin karşılığı budur. İsim yoksa (ör. haritaya dokunarak
+ * seçilen bir nokta) koordinata düşülür.
+ * @param {number} lat
+ * @param {number} lon
+ * @param {string} [searchQuery] - Kullanıcının GERÇEKTEN aradığı/yazdığı yer adı
+ *   (yalnızca adres aramasından gelir - "Ev"/"İş" gibi favori etiketleri
+ *   BURAYA GEÇİRİLMEMELİDİR, Google'a anlamsız bir isim gönderilmiş olur).
+ * @returns {Promise<void>}
+ */
+export async function openInGoogleMaps(lat, lon, searchQuery) {
+  const destination = searchQuery ? encodeURIComponent(searchQuery) : `${lat},${lon}`;
+  const url = `https://www.google.com/maps/dir/?api=1&destination=${destination}&travelmode=driving`;
+  await Browser.open({ url });
+}
+
+/**
+ * Google Haritalar'ı, HERHANGİ bir hedef aramadan/rotasız, mevcut konuma
+ * ortalanmış şekilde doğrudan açar - kullanıcı "hiçbir rota oluşturmadan
+ * doğrudan Google Haritalar'a geçip orada arayayım" isteğinin karşılığı.
+ * @param {number} lat
+ * @param {number} lon
+ * @returns {Promise<void>}
+ */
+export async function openGoogleMapsGeneral(lat, lon) {
+  const url = `https://www.google.com/maps/@${lat},${lon},15z`;
   await Browser.open({ url });
 }
 
