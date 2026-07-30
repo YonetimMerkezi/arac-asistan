@@ -14,6 +14,7 @@
 
 import { Geolocation } from '@capacitor/geolocation';
 import { onStateChange as onBluetoothStateChange } from '../bluetooth/bluetooth-manager.js';
+import { haversineDistanceKm } from '../trip/geo-utils.js';
 import { logError, logInfo, logWarn } from './logger.js';
 
 /**
@@ -35,6 +36,9 @@ let watchId = null;
 
 /** @type {LivePosition|null} Son bilinen konum (yeni abone olan hemen okuyabilsin diye). */
 let lastPosition = null;
+
+/** @type {{lat: number, lon: number, timestamp: number}|null} Hız yedek hesabı için ÖNCEKİ ham okuma. */
+let previousRawReading = null;
 
 /** @type {(() => void)|null} */
 let unsubscribeBluetooth = null;
@@ -130,15 +134,40 @@ export function getLastPosition() {
  */
 function handlePosition(position) {
   const { latitude, longitude, speed, heading, accuracy, altitude } = position.coords;
+  const now = Date.now();
+
+  // DÜZELTME: Bazı cihazlarda/GPS çiplerinde native `coords.speed` alanı
+  // GÜVENİLİR DOLMUYOR - araç hareket halindeyken bile sürekli null/0
+  // gelebiliyor ("anlık hız hep 0" şikayetinin sebebi). Native hız
+  // yoksa/0 ise, ÖNCEKİ okumaya göre kat edilen mesafe/geçen süreden
+  // KENDİMİZ hesaplıyoruz - GPS'in kendi hız alanı kadar hassas olmasa da,
+  // gerçek hareketi "hep 0" göstermekten çok daha doğrudur.
+  let speedKmh = speed && speed > 0 ? speed * 3.6 : 0;
+
+  if (speedKmh === 0 && previousRawReading) {
+    const elapsedSeconds = (now - previousRawReading.timestamp) / 1000;
+    // Çok kısa aralıklarda (GPS gürültüsü) ya da çok uzun aralıklarda
+    // (durup kalkma, uygulama arka plandaydı vb.) hesaplama güvenilmez -
+    // makul bir pencerede (1-15 sn) hesaplanır.
+    if (elapsedSeconds >= 1 && elapsedSeconds <= 15) {
+      const distanceKm = haversineDistanceKm(previousRawReading.lat, previousRawReading.lon, latitude, longitude);
+      const calculatedKmh = (distanceKm / elapsedSeconds) * 3600;
+      // GPS "sıçraması" (aynı yerde dururken küçük konum gürültüsü) çok
+      // düşük hızları abartmasın diye bir eşik uygulanır.
+      if (calculatedKmh > 3) speedKmh = calculatedKmh;
+    }
+  }
+
+  previousRawReading = { lat: latitude, lon: longitude, timestamp: now };
 
   lastPosition = {
     latitude,
     longitude,
-    speedKmh: speed && speed > 0 ? speed * 3.6 : 0,
+    speedKmh,
     headingDeg: typeof heading === 'number' && !Number.isNaN(heading) ? heading : null,
     accuracy,
     altitude: typeof altitude === 'number' && !Number.isNaN(altitude) ? altitude : null,
-    timestamp: Date.now(),
+    timestamp: now,
   };
 
   for (const listener of listeners) {

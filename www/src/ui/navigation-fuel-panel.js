@@ -291,7 +291,7 @@ function renderModalPriceList(listEl, prices, highlightBrand) {
       ${sameBrand(s.dagitici, highlightBrand) ? 'border-color:' + brandColor(s.dagitici) + '; border-width:2px;' : ''}">
       ${brandBadgeMarkup(s.dagitici, { size: 30 })}
       <span class="sda-card__value" style="flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-size:0.9rem;">${s.dagitici}</span>
-      <span class="sda-card__label" style="text-align:right;">Benzin ${s.benzin ?? '-'} ₺<br>Motorin ${s.motorin ?? '-'} ₺</span>
+      <span class="sda-card__label" style="text-align:right;">Benzin ${s.benzin ?? '-'} ₺<br>Motorin ${s.motorin ?? '-'} ₺<br>LPG ${s.lpg ?? '-'} ₺</span>
     </div>
   `).join('');
 }

@@ -113,30 +113,41 @@ export function bindFullscreenToggle(container, map) {
   const originalSummaryParent = summaryEl?.parentElement ?? null;
   const originalSummaryClass = summaryEl?.getAttribute('class') ?? '';
 
+  // DÜZELTME: Hız kartı önceden haritanın ÜST kısmına, Leaflet'in kendi
+  // yakınlaştırma (+/-) düğmeleriyle AYNI köşeye (sol üst) konuyordu -
+  // ikisi görsel olarak ÇAKIŞIYORDU. Artık İKİSİ DE (hız kartı + rota
+  // özeti) haritanın ALT kısmında, tek bir dikey yığın halinde duruyor -
+  // üst-sol köşe tamamen Leaflet'in kendi kontrollerine bırakılıyor.
+  const bottomStack = document.createElement('div');
+  bottomStack.setAttribute('data-fullscreen-bottom-stack', '');
+  bottomStack.style.cssText = 'position:absolute; bottom:12px; left:12px; right:12px; z-index:1500; display:flex; flex-direction:column; align-items:flex-start; gap:8px; pointer-events:none;';
+
   const applyState = (fullscreen) => {
     document.body.classList.toggle('sda-fullscreen-nav', fullscreen);
 
     if (fullscreen) {
-      mapWrapper.prepend(speedCard);
-      // JS İLE DOĞRUDAN konumlandırma - CSS kademesine/özgüllüğüne bağlı değil.
-      speedCard.style.cssText = 'position:absolute; top:12px; left:12px; right:12px; z-index:600; margin:0; box-shadow:var(--sda-shadow-elevated);';
+      mapWrapper.appendChild(bottomStack);
+      bottomStack.appendChild(speedCard);
+      // Kompakt: artık tam genişlik değil, küçük bir rozet gibi - kendi
+      // içeriği kadar yer kaplar, `pointer-events` yeniden açılır (üst
+      // kapsayıcı etkileşimi kapatıyor, kart kendi dokunuşlarını almalı).
+      speedCard.style.cssText = 'display:flex; align-items:center; gap:10px; margin:0; padding:8px 14px; background:var(--sda-bg-elevated); border-radius:999px; box-shadow:var(--sda-shadow-elevated); pointer-events:auto;';
+
       if (statusEl) {
         statusEl.style.cssText = 'display:none;'; // Rota özeti kartı görünürken bu satır zaten boş - saklıyoruz.
       }
 
       if (summaryEl) {
-        mapWrapper.appendChild(summaryEl);
-        // Google Haritalar'daki gibi: haritanın ALTINDA, SAYDAM duran bir
-        // bilgi şeridi - önceden haritanın DIŞINDA (altında) kalıyordu,
-        // tam ekranda görünüm `overflow:hidden` olduğu için tamamen
-        // KAYBOLUYORDU.
+        bottomStack.appendChild(summaryEl);
         summaryEl.removeAttribute('class');
-        summaryEl.style.cssText = 'position:absolute; bottom:12px; left:12px; right:12px; z-index:600; margin:0; background:rgba(20,22,28,0.82); backdrop-filter:blur(6px); padding:10px 14px; border-radius:var(--sda-radius-md);';
+        summaryEl.style.cssText = 'width:100%; margin:0; background:rgba(20,22,28,0.82); backdrop-filter:blur(6px); padding:10px 14px; border-radius:var(--sda-radius-md); pointer-events:auto;';
       }
 
       button.innerHTML = iconMarkup('fullscreen-exit', { size: 22 });
-      button.style.zIndex = '600';
+      button.style.zIndex = '1500';
     } else {
+      bottomStack.remove();
+
       if (originalSpeedCardNextSibling) {
         originalSpeedCardParent.insertBefore(speedCard, originalSpeedCardNextSibling);
       } else {
