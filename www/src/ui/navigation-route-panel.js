@@ -13,7 +13,7 @@
 
 import L from 'leaflet';
 import { Browser } from '@capacitor/browser';
-import { getLastPosition } from '../core/gps-tracker.js';
+import { getLastPosition, onPosition } from '../core/gps-tracker.js';
 import { getDrivingRoute } from '../maps/route-service.js';
 import { reverseGeocodeIlIlce } from '../maps/reverse-geocode.js';
 import { getFuelPrices } from '../maps/fuel-price-service.js';
@@ -27,6 +27,9 @@ let routeLine = null;
 
 /** @type {import('leaflet').Polyline[]} Seçilmeyen alternatif rota çizgileri. */
 let alternateRouteLines = [];
+
+/** @type {(() => void)|null} Kalan mesafe/süre/varış saatini CANLI güncelleyen GPS aboneliği. */
+let unsubscribeLiveProgress = null;
 
 /**
  * Verilen (veya mevcut konumdan) noktadan verilen favori/aranan konuma
@@ -42,7 +45,7 @@ export async function drawRouteTo(map, destination, container, origin = null) {
   const statusEl = container.querySelector('[data-status]');
   const summaryEl = container.querySelector('[data-route-summary]');
   const googleMapsButton = container.querySelector('[data-open-google-maps]');
-  if (summaryEl) summaryEl.style.display = 'none';
+  if (summaryEl) { summaryEl.style.display = 'none'; summaryEl.dataset.wasVisible = 'false'; }
 
   // DÜZELTME: Google Haritalar düğmesi ÖNCEDEN yalnızca BİZİM OSRM rotamız
   // BAŞARILI olursa görünürdü - tam da rotamızın hatalı/dolambaçlı çıktığı
@@ -158,6 +161,7 @@ function selectRoute(map, routes, selectedIndex, destination, container) {
   if (statusEl) statusEl.textContent = '';
   if (summaryEl) {
     summaryEl.style.display = 'block';
+    summaryEl.dataset.wasVisible = 'true';
     setField(summaryEl, 'route-destination', destination.label);
     setField(summaryEl, 'route-distance', `${selected.distanceKm.toFixed(1)} km`);
     setField(summaryEl, 'route-duration', `${Math.round(selected.durationMinutes)} dk`);
@@ -167,6 +171,71 @@ function selectRoute(map, routes, selectedIndex, destination, container) {
   }
 
   startGuidance(selected);
+  if (summaryEl) startLiveProgressTracking(selected, summaryEl);
+}
+
+/**
+ * Kalan mesafe/süre/varış saatini GPS akışına göre CANLI günceller - önceden
+ * bu değerler rota ilk hesaplandığında TEK SEFERLİK yazılıyordu, sürüş
+ * ilerledikçe değişmiyordu.
+ *
+ * YAKLAŞIM: OSRM'e sürekli yeni istek atmak yerine (gereksiz ağ/pil
+ * tüketimi), rotanın kendi nokta dizisinde konuma EN YAKIN noktayı bulup
+ * oradan hedefe kalan mesafeyi rota üzerinden toplar; kalan süre, rotanın
+ * ORİJİNAL ortalama hızına ORANTILI tahmin edilir - tam GPS hassasiyetinde
+ * olmasa da pratikte yeterince doğru bir "canlı" his verir.
+ * @param {import('../maps/route-service.js').RouteResult} route
+ * @param {HTMLElement} summaryEl
+ */
+function startLiveProgressTracking(route, summaryEl) {
+  unsubscribeLiveProgress?.();
+
+  unsubscribeLiveProgress = onPosition((position) => {
+    const remaining = computeRemainingRouteProgress(route, position);
+    if (!remaining) return;
+
+    setField(summaryEl, 'route-distance', `${remaining.distanceKm.toFixed(1)} km`);
+    setField(summaryEl, 'route-duration', remaining.distanceKm < 0.05 ? 'Vardınız' : `${Math.max(1, Math.round(remaining.durationMinutes))} dk`);
+
+    const eta = new Date(Date.now() + remaining.durationMinutes * 60000);
+    setField(summaryEl, 'route-eta', eta.toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' }));
+  });
+}
+
+/**
+ * Verilen konumdan rotanın SONUNA kadar, rota üzerinden kalan mesafeyi ve
+ * (orijinal rotanın ortalama hızına orantılı) kalan süreyi hesaplar.
+ * @param {import('../maps/route-service.js').RouteResult} route
+ * @param {import('../core/gps-tracker.js').LivePosition} position
+ * @returns {{distanceKm: number, durationMinutes: number}|null}
+ */
+function computeRemainingRouteProgress(route, position) {
+  const coordinates = route.coordinates;
+  if (!coordinates || coordinates.length < 2) return null;
+
+  // Rota üzerinde konuma EN YAKIN noktayı bul (basit en-yakın-komşu araması -
+  // rota nokta sayısı tipik olarak birkaç yüzle sınırlı, performans sorunu yaratmaz).
+  let nearestIndex = 0;
+  let nearestDistanceKm = Infinity;
+  coordinates.forEach(([lat, lon], index) => {
+    const d = haversineDistanceKm(position.latitude, position.longitude, lat, lon);
+    if (d < nearestDistanceKm) {
+      nearestDistanceKm = d;
+      nearestIndex = index;
+    }
+  });
+
+  let remainingDistanceKm = 0;
+  for (let i = nearestIndex; i < coordinates.length - 1; i += 1) {
+    const [lat1, lon1] = coordinates[i];
+    const [lat2, lon2] = coordinates[i + 1];
+    remainingDistanceKm += haversineDistanceKm(lat1, lon1, lat2, lon2);
+  }
+
+  const progressRatio = route.distanceKm > 0 ? remainingDistanceKm / route.distanceKm : 0;
+  const remainingDurationMinutes = route.durationMinutes * progressRatio;
+
+  return { distanceKm: remainingDistanceKm, durationMinutes: remainingDurationMinutes };
 }
 
 /**

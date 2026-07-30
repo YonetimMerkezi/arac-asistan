@@ -103,11 +103,15 @@ export function bindFullscreenToggle(container, map) {
   const mapWrapper = container.querySelector('[data-map-wrapper]');
   const speedCard = container.querySelector('[data-speed-card]');
   const statusEl = container.querySelector('[data-status]');
+  const summaryEl = container.querySelector('[data-route-summary]');
   if (!button || !mapWrapper || !speedCard) return;
 
   const originalSpeedCardNextSibling = speedCard.nextSibling;
   const originalSpeedCardParent = speedCard.parentElement;
   const originalStatusStyle = statusEl?.getAttribute('style') ?? '';
+  const originalSummaryNextSibling = summaryEl?.nextSibling ?? null;
+  const originalSummaryParent = summaryEl?.parentElement ?? null;
+  const originalSummaryClass = summaryEl?.getAttribute('class') ?? '';
 
   const applyState = (fullscreen) => {
     document.body.classList.toggle('sda-fullscreen-nav', fullscreen);
@@ -117,8 +121,19 @@ export function bindFullscreenToggle(container, map) {
       // JS İLE DOĞRUDAN konumlandırma - CSS kademesine/özgüllüğüne bağlı değil.
       speedCard.style.cssText = 'position:absolute; top:12px; left:12px; right:12px; z-index:600; margin:0; box-shadow:var(--sda-shadow-elevated);';
       if (statusEl) {
-        statusEl.style.cssText = 'position:absolute; bottom:12px; left:12px; right:12px; z-index:600; margin:0; background:var(--sda-bg-elevated); padding:8px 12px; border-radius:var(--sda-radius-sm);';
+        statusEl.style.cssText = 'display:none;'; // Rota özeti kartı görünürken bu satır zaten boş - saklıyoruz.
       }
+
+      if (summaryEl) {
+        mapWrapper.appendChild(summaryEl);
+        // Google Haritalar'daki gibi: haritanın ALTINDA, SAYDAM duran bir
+        // bilgi şeridi - önceden haritanın DIŞINDA (altında) kalıyordu,
+        // tam ekranda görünüm `overflow:hidden` olduğu için tamamen
+        // KAYBOLUYORDU.
+        summaryEl.removeAttribute('class');
+        summaryEl.style.cssText = 'position:absolute; bottom:12px; left:12px; right:12px; z-index:600; margin:0; background:rgba(20,22,28,0.82); backdrop-filter:blur(6px); padding:10px 14px; border-radius:var(--sda-radius-md);';
+      }
+
       button.innerHTML = iconMarkup('fullscreen-exit', { size: 22 });
       button.style.zIndex = '600';
     } else {
@@ -129,6 +144,17 @@ export function bindFullscreenToggle(container, map) {
       }
       speedCard.style.cssText = 'display:flex; align-items:center; gap:12px; margin-bottom:8px;';
       if (statusEl) statusEl.setAttribute('style', originalStatusStyle);
+
+      if (summaryEl && originalSummaryParent) {
+        if (originalSummaryNextSibling) {
+          originalSummaryParent.insertBefore(summaryEl, originalSummaryNextSibling);
+        } else {
+          originalSummaryParent.appendChild(summaryEl);
+        }
+        summaryEl.setAttribute('class', originalSummaryClass);
+        summaryEl.style.cssText = summaryEl.dataset.wasVisible === 'true' ? 'display:block; margin-top:8px;' : 'display:none; margin-top:8px;';
+      }
+
       button.innerHTML = iconMarkup('fullscreen', { size: 22 });
     }
 
