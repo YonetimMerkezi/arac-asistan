@@ -23,6 +23,8 @@ import {
 } from '../bluetooth/bluetooth-manager.js';
 import { getLastPosition } from '../core/gps-tracker.js';
 import { bindBackgroundServiceToggle, bindKeepAwakeToggle, bindOwnerNameInput, bindBootNotificationToggle } from './settings-preferences-panel.js';
+import { bindBackupPanel } from './settings-backup-panel.js';
+import { bindGreetingPanel } from './settings-greeting-panel.js';
 import { createCorridor, listCorridors, deleteCorridor } from '../data/corridor-repository.js';
 import { refreshCorridors } from '../maps/average-speed-corridor.js';
 import { getEcuStatus, onEcuStatusChange } from '../obd/ecu-connection-store.js';
@@ -143,6 +145,28 @@ function render(container) {
       <input type="text" data-owner-name-input class="sda-select" style="width:100%;" placeholder="İsminiz">
     </div>
 
+    <div class="sda-card" style="margin-bottom:16px;">
+      <p class="sda-card__label">Karşılama Mesajı Sesli Okunsun</p>
+      <button type="button" data-greeting-spoken-toggle class="sda-nav-btn" style="width:100%; flex-direction:row; gap:8px; margin-top:8px;"></button>
+      <p class="sda-card__label" style="margin:12px 0 4px;">Neler söylensin?</p>
+      <div data-greeting-fields-list></div>
+    </div>
+
+    <h3 style="margin:4px 0;">Veri Yedekleme</h3>
+    <div class="sda-card" style="margin-bottom:16px;">
+      <p style="font-size:0.85rem; color:var(--sda-text-muted); margin:0 0 12px;">
+        Tüm yolculuklar, yakıt kayıtları, bakım geçmişi, koridorlar ve
+        ayarlarınızı tek bir dosyaya kaydedin - telefon değiştirirken veya
+        yedek almak istediğinizde kullanın.
+      </p>
+      <div style="display:flex; gap:8px; margin-bottom:8px;">
+        <button type="button" data-backup-export class="sda-nav-btn" style="background:var(--sda-accent-soft); flex:1;">Yedekle</button>
+        <button type="button" data-backup-import class="sda-nav-btn" style="background:var(--sda-bg-elevated); flex:1;">Geri Yükle</button>
+      </div>
+      <input type="file" data-backup-file-input accept="application/json,.json" hidden>
+      <p data-backup-status class="sda-card__label" style="min-height:1em;"></p>
+    </div>
+
     <h3 style="margin:4px 0;">Ortalama Hız Koridorları</h3>
     <form data-corridor-form class="sda-card" style="display:grid; gap:8px; margin-bottom:12px;">
       <input name="name" type="text" placeholder="Koridor adı" required style="padding:8px;">
@@ -164,6 +188,8 @@ function render(container) {
   bindKeepAwakeToggle(container);
   bindOwnerNameInput(container);
   bindBootNotificationToggle(container);
+  bindBackupPanel(container);
+  bindGreetingPanel(container);
   bindCorridorForm(container);
   void renderCorridorList(container);
 }

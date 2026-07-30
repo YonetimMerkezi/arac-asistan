@@ -7,6 +7,12 @@
  * navigation-view.js'ten BİLİNÇLİ olarak ayrıldı (kod standardı: dosya
  * başına maks. 500 satır) - bu ikisi "haritanın üzerinde ne gösterilir"
  * ile ilgilenir, navigation-view.js ise haritanın kendisini/POI'yi yönetir.
+ *
+ * DÜZELTME (kritik hata): Önceki sürüm tam ekran konumlandırmasını (hız
+ * kartının haritanın üzerinde kayan bir overlay olması) SALT CSS'e
+ * bırakıyordu - kullanıcı "tam ekranda hızlar görünmüyor" bildirdi. Artık
+ * konumlandırma doğrudan JS ile (inline stil) uygulanıyor - CSS
+ * kademesi/özgüllüğü belirsizliğine yer bırakmıyor, davranış kesin.
  * ---------------------------------------------------------------------------
  */
 
@@ -14,6 +20,7 @@ import { iconMarkup } from './icons.js';
 import { onPosition } from '../core/gps-tracker.js';
 import { getSpeedLimitNear } from '../maps/speed-limit-service.js';
 import { getLivePidValue, onLiveDataChange } from '../core/vehicle-live-data-store.js';
+import { isNavFullscreen, setNavFullscreen, onNavFullscreenChange } from '../core/nav-fullscreen-state.js';
 
 /** @type {(() => void)|null} */
 let unsubscribeSpeedLimit = null;
@@ -63,13 +70,15 @@ export function bindLiveSpeedLimitCard(container) {
 }
 
 /**
- * Tam ekran harita düğmesini bağlar. "Tam ekran" olunca:
- *  - body'e bir sınıf eklenir (üst bar/alt gezinme çubuğu CSS ile gizlenir),
- *  - hız kartı, konumu KORUNARAK (yeniden çizilmeden) harita sarmalayıcısına
- *    TAŞINIR - böylece haritanın üzerinde kayan bir kart olarak görünür
- *    (bkz. theme.css'teki `body.sda-fullscreen-nav [data-speed-card]` kuralı;
- *    bu kural ancak kart GERÇEKTEN map-wrapper içindeyse işe yarar, çünkü
- *    normalde bulunduğu [data-nav-chrome] tam ekranda `display:none` olur).
+ * Tam ekran düğmesini (ve fiziksel geri tuşuyla da tetiklenebilen paylaşılan
+ * tam ekran durumunu) bağlar.
+ *
+ * Konumlandırma JS İLE DOĞRUDAN uygulanır (CSS sınıfına güvenilmez):
+ *  - hız kartı, konumu KORUNARAK harita sarmalayıcısına TAŞINIR ve inline
+ *    stille üstte sabitlenir,
+ *  - durum satırı (rota özeti) alta sabitlenir,
+ *  - üst bar/alt gezinme çubuğu body sınıfıyla gizlenir (bunlar basit
+ *    display:none olduğu için CSS'e bırakılması güvenli).
  * @param {HTMLElement} container
  * @param {import('leaflet').Map} map
  */
@@ -77,26 +86,34 @@ export function bindFullscreenToggle(container, map) {
   const button = container.querySelector('[data-fullscreen-toggle]');
   const mapWrapper = container.querySelector('[data-map-wrapper]');
   const speedCard = container.querySelector('[data-speed-card]');
+  const statusEl = container.querySelector('[data-status]');
   if (!button || !mapWrapper || !speedCard) return;
 
-  const originalNextSibling = speedCard.nextSibling;
-  const originalParent = speedCard.parentElement;
-  let isFullscreen = false;
+  const originalSpeedCardNextSibling = speedCard.nextSibling;
+  const originalSpeedCardParent = speedCard.parentElement;
+  const originalStatusStyle = statusEl?.getAttribute('style') ?? '';
 
-  button.addEventListener('click', () => {
-    isFullscreen = !isFullscreen;
-    document.body.classList.toggle('sda-fullscreen-nav', isFullscreen);
+  const applyState = (fullscreen) => {
+    document.body.classList.toggle('sda-fullscreen-nav', fullscreen);
 
-    if (isFullscreen) {
+    if (fullscreen) {
       mapWrapper.prepend(speedCard);
-      button.innerHTML = iconMarkup('fullscreen-exit', { size: 20 });
-    } else {
-      if (originalNextSibling) {
-        originalParent.insertBefore(speedCard, originalNextSibling);
-      } else {
-        originalParent.appendChild(speedCard);
+      // JS İLE DOĞRUDAN konumlandırma - CSS kademesine/özgüllüğüne bağlı değil.
+      speedCard.style.cssText = 'position:absolute; top:12px; left:12px; right:12px; z-index:600; margin:0; box-shadow:var(--sda-shadow-elevated);';
+      if (statusEl) {
+        statusEl.style.cssText = 'position:absolute; bottom:12px; left:12px; right:12px; z-index:600; margin:0; background:var(--sda-bg-elevated); padding:8px 12px; border-radius:var(--sda-radius-sm);';
       }
-      button.innerHTML = iconMarkup('fullscreen', { size: 20 });
+      button.innerHTML = iconMarkup('fullscreen-exit', { size: 22 });
+      button.style.zIndex = '600';
+    } else {
+      if (originalSpeedCardNextSibling) {
+        originalSpeedCardParent.insertBefore(speedCard, originalSpeedCardNextSibling);
+      } else {
+        originalSpeedCardParent.appendChild(speedCard);
+      }
+      speedCard.style.cssText = 'display:flex; align-items:center; justify-content:space-around; margin-bottom:8px;';
+      if (statusEl) statusEl.setAttribute('style', originalStatusStyle);
+      button.innerHTML = iconMarkup('fullscreen', { size: 22 });
     }
 
     // Leaflet, konteyner boyutu CSS ile değişince bunu KENDİLİĞİNDEN fark
@@ -104,5 +121,12 @@ export function bindFullscreenToggle(container, map) {
     // gerektiğini açıkça söylemek gerekir, yoksa harita eski boyutunda/yanlış
     // konumlanmış kalır.
     requestAnimationFrame(() => map?.invalidateSize());
+  };
+
+  button.addEventListener('click', () => {
+    setNavFullscreen(!isNavFullscreen());
   });
+
+  onNavFullscreenChange(applyState);
+  applyState(isNavFullscreen()); // Ekrana ilk girişte (ör. geri tuşuyla tam ekrandan çıkılmış olabilir) tutarlı başlangıç durumu.
 }

@@ -54,6 +54,29 @@ export const WIDGET_REGISTRY = [
   { pid: '09', label: 'Uzun Dönem Yakıt Ayarı (Bank 2)', unit: '%', min: -100, max: 100, defaultColorHue: 291 },
   { pid: '0E', label: 'Avans Zamanlaması', unit: '°', min: -64, max: 64, defaultColorHue: 48 },
   { pid: 'CALC_L100', label: 'Anlık Tüketim', unit: 'L/100km', min: 0, max: 30, defaultColorHue: 142, requiresPids: ['10', '0D'] },
+
+  // DÜZENLEME (2026-07-30): "Tüm Sensörler" ekranında (Arıza Merkezi) görünen
+  // ama Panel'e EKLENEMEYEN PID'ler vardı - kullanıcı "bunlardan panele
+  // eklemek istediklerim olabilir" dedi. pid-definitions.js'te formülü olan
+  // HER PID artık burada da widget olarak seçilebilir - aradaki boşluk kapandı.
+  { pid: '0B', label: 'Emme Manifoldu Mutlak Basıncı', unit: 'kPa', min: 0, max: 255, defaultColorHue: 291 },
+  { pid: '14', label: 'O2 Sensörü 1 (Bank 1) Voltajı', unit: 'V', min: 0, max: 1.275, defaultColorHue: 335 },
+  { pid: '15', label: 'O2 Sensörü 2 (Bank 1) Voltajı', unit: 'V', min: 0, max: 1.275, defaultColorHue: 335 },
+  { pid: '1F', label: 'Motor Çalışma Süresi', unit: 's', min: 0, max: 18000, defaultColorHue: 199 },
+  { pid: '21', label: 'Arıza Lambası Mesafesi', unit: 'km', min: 0, max: 65535, defaultColorHue: 4 },
+  { pid: '2C', label: 'Komuta Edilen EGR', unit: '%', min: 0, max: 100, defaultColorHue: 291 },
+  { pid: '2D', label: 'EGR Hatası', unit: '%', min: -100, max: 100, defaultColorHue: 291 },
+  { pid: '2E', label: 'Evaporatif Temizleme', unit: '%', min: 0, max: 100, defaultColorHue: 291 },
+  { pid: '31', label: 'Kod Silindiğinden Beri Mesafe', unit: 'km', min: 0, max: 65535, defaultColorHue: 199 },
+  { pid: '3C', label: 'Katalizör Sıcaklığı (B1S1)', unit: '°C', min: -40, max: 900, unitKind: 'temp', defaultColorHue: 4 },
+  { pid: '3D', label: 'Katalizör Sıcaklığı (B2S1)', unit: '°C', min: -40, max: 900, unitKind: 'temp', defaultColorHue: 4 },
+  { pid: '43', label: 'Mutlak Motor Yükü', unit: '%', min: 0, max: 100, defaultColorHue: 28 },
+  { pid: '44', label: 'Hava/Yakıt Oranı (λ)', unit: 'λ', min: 0, max: 2, defaultColorHue: 335 },
+  { pid: '45', label: 'Bağıl Gaz Kelebeği', unit: '%', min: 0, max: 100, defaultColorHue: 28 },
+  { pid: '49', label: 'Gaz Pedalı Konumu D', unit: '%', min: 0, max: 100, defaultColorHue: 28 },
+  { pid: '4A', label: 'Gaz Pedalı Konumu E', unit: '%', min: 0, max: 100, defaultColorHue: 28 },
+  { pid: '4C', label: 'Gaz Kelebeği Aktüatörü', unit: '%', min: 0, max: 100, defaultColorHue: 28 },
+  { pid: '5E', label: 'Yakıt Tüketim Hızı', unit: 'L/h', min: 0, max: 100, defaultColorHue: 142 },
 ];
 
 /** @type {string[]} Kullanıcı hiç özelleştirme yapmadıysa gösterilecek varsayılan widget sırası. */

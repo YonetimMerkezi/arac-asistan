@@ -12,6 +12,8 @@
 import { initThemeManager } from './theme-manager.js';
 import { initKeepAwake } from './keep-awake.js';
 import { initOwnerName, getOwnerName } from './owner-name-store.js';
+import { initGreetingPreferences } from './greeting-preferences-store.js';
+import { initBackButtonHandler } from './back-button.js';
 import { requestAllPermissionsUpfront } from './permissions-bootstrap.js';
 import { initViewRouter } from './view-router.js';
 import { mountNavIcons } from './nav-icons.js';
@@ -89,8 +91,10 @@ window.addEventListener('unhandledrejection', (event) => {
 async function bootstrap() {
   try {
     await initThemeManager();
+    initBackButtonHandler();
     void initKeepAwake();
     await initOwnerName();
+    await initGreetingPreferences();
     void requestAllPermissionsUpfront();
     initViewRouter('dashboard');
     mountNavIcons();

@@ -82,6 +82,14 @@ export function openModal({ title, bodyHtml, onMount }) {
 }
 
 /**
+ * @returns {boolean} Şu an açık bir modal var mı - geri tuşu gibi genel
+ * davranışların "önce modalı mı kapatayım" kararı vermesi için.
+ */
+export function isModalOpen() {
+  return activeOverlay !== null;
+}
+
+/**
  * Açık modalı (varsa) kapatır. Zaten kapalıysa sessizce hiçbir şey yapmaz.
  * Kapanmadan hemen önce gövde (sheet) elemanında `sda-modal-closed` özel
  * olayını yayınlar - modal içeriği bir abonelik (ör. canlı günlük akışı)

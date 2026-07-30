@@ -31,6 +31,37 @@ const OSRM_ENDPOINT = 'https://router.project-osrm.org/route/v1/driving';
  */
 
 /**
+ * Birden fazla nokta (ör. haritaya dokunularak eklenen duraklar) üzerinden
+ * SIRAYLA geçen tek bir rota getirir. Alternatifler istenmez (OSRM, 2'den
+ * fazla nokta olunca alternatifleri güvenilir desteklemiyor).
+ * @param {{lat: number, lon: number}[]} waypoints - En az 2 nokta gerekir.
+ * @returns {Promise<RouteResult|null>}
+ */
+export async function getMultiPointRoute(waypoints) {
+  if (waypoints.length < 2) return null;
+
+  const coords = waypoints.map((w) => `${w.lon},${w.lat}`).join(';');
+  const url = `${OSRM_ENDPOINT}/${coords}?overview=full&geometries=geojson&steps=true`;
+
+  try {
+    const response = await fetch(url);
+    if (!response.ok) {
+      logWarn('route-service', `OSRM (çok noktalı) yanıtı başarısız: HTTP ${response.status}`);
+      return null;
+    }
+
+    const data = await response.json();
+    const route = data.routes?.[0];
+    if (!route) return null;
+
+    return parseRoute(route);
+  } catch (error) {
+    logWarn('route-service', 'Çok noktalı rota alınamadı (muhtemelen internet yok)', error);
+    return null;
+  }
+}
+
+/**
  * İki nokta arasında sürüş rotası (ve varsa alternatifleri) getirir.
  * @param {{lat: number, lon: number}} from
  * @param {{lat: number, lon: number}} to

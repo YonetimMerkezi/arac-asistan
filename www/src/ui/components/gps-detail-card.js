@@ -14,6 +14,7 @@
  */
 
 import { onPosition } from '../../core/gps-tracker.js';
+import { iconMarkup } from '../icons.js';
 
 /** @type {(() => void)|null} */
 let unsubscribe = null;
@@ -24,8 +25,8 @@ let unsubscribe = null;
  */
 export function mountGpsDetailCard(container) {
   container.innerHTML = `
-    <button type="button" data-gps-toggle class="sda-btn sda-btn--ghost" style="width:100%; margin-bottom:8px;">
-      📍 GPS Detayları
+    <button type="button" data-gps-toggle class="sda-nav-btn" style="width:100%; margin-bottom:8px; background:var(--sda-bg-elevated); flex-direction:row; justify-content:center; gap:8px; padding:12px;">
+      ${iconMarkup('location', { size: 18 })}<span>GPS Detayları</span>
     </button>
     <div data-gps-body class="sda-card" style="display:none; margin-bottom:8px;">
       <div data-gps-fields style="display:grid; grid-template-columns:1fr 1fr; gap:8px;"></div>

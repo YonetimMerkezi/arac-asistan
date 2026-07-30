@@ -18,6 +18,7 @@ import { reverseGeocodeIlIlce } from '../maps/reverse-geocode.js';
 import { getFuelPrices } from '../maps/fuel-price-service.js';
 import { estimateAverageConsumption, estimateFuelCost } from '../fuel/route-cost-estimator.js';
 import { startGuidance } from '../maps/turn-by-turn.js';
+import { haversineDistanceKm } from '../trip/geo-utils.js';
 import { logWarn } from '../core/logger.js';
 
 /** @type {import('leaflet').Polyline|null} Şu an seçili (ana) rota çizgisi. */
@@ -38,6 +39,9 @@ let alternateRouteLines = [];
 export async function drawRouteTo(map, destination, container, origin = null) {
   const current = origin ?? getLastPosition();
   const statusEl = container.querySelector('[data-status]');
+  const summaryEl = container.querySelector('[data-route-summary]');
+  if (summaryEl) summaryEl.style.display = 'none';
+
   if (!current) {
     if (statusEl) statusEl.textContent = 'Konum henüz alınamadı.';
     return;
@@ -55,8 +59,46 @@ export async function drawRouteTo(map, destination, container, origin = null) {
     return;
   }
 
-  selectRoute(map, routes, 0, destination, container);
-  void appendRouteFuelCost(statusEl, { latitude: current.latitude ?? current.lat, longitude: current.longitude ?? current.lon }, routes[0].distanceKm);
+  const bestIndex = pickLeastDetouredRoute(routes, current, destination);
+  selectRoute(map, routes, bestIndex, destination, container);
+  void appendRouteFuelCost(statusEl, { latitude: current.latitude ?? current.lat, longitude: current.longitude ?? current.lon }, routes[bestIndex].distanceKm);
+}
+
+/**
+ * OSRM'in "birincil" dediği rota (dizinin ilk elemanı) HER ZAMAN en mantıklısı
+ * olmuyor - bazı bölgelerde (özellikle kırsal/dağlık) OSRM'in yol verisi
+ * eksik/hatalı olduğunda gereksiz dolambaçlı bir rota "birincil" seçilebiliyor
+ * (bkz. Bingöl-Genç örneği - kullanıcı bildirdi). Bu fonksiyon, "kuş uçuşu
+ * mesafeye oranla en az sapan" rotayı seçerek bu riski azaltır - `alternatives=true`
+ * ile zaten istenen alternatifler arasından gerçek bir seçim yapılmış olur.
+ * @param {import('../maps/route-service.js').RouteResult[]} routes
+ * @param {{latitude?: number, longitude?: number, lat?: number, lon?: number}} origin
+ * @param {{lat: number, lon: number}} destination
+ * @returns {number} En iyi rotanın `routes` dizisindeki indeksi.
+ */
+function pickLeastDetouredRoute(routes, origin, destination) {
+  const originLat = origin.latitude ?? origin.lat;
+  const originLon = origin.longitude ?? origin.lon;
+  const straightLineKm = haversineDistanceKm(originLat, originLon, destination.lat, destination.lon);
+
+  if (straightLineKm < 0.5) return 0; // Çok kısa mesafede oran anlamsız - varsayılana güven.
+
+  let bestIndex = 0;
+  let bestRatio = Infinity;
+
+  routes.forEach((route, index) => {
+    const ratio = route.distanceKm / straightLineKm;
+    if (ratio < bestRatio) {
+      bestRatio = ratio;
+      bestIndex = index;
+    }
+  });
+
+  if (bestIndex !== 0) {
+    logWarn('navigation-route-panel', `OSRM'in birincil rotası aşırı dolambaçlıydı (oran: ${bestRatio.toFixed(2)}) - alternatif ${bestIndex} seçildi`);
+  }
+
+  return bestIndex;
 }
 
 /**
@@ -78,6 +120,7 @@ export async function drawRouteTo(map, destination, container, origin = null) {
  */
 function selectRoute(map, routes, selectedIndex, destination, container) {
   const statusEl = container.querySelector('[data-status]');
+  const summaryEl = container.querySelector('[data-route-summary]');
   const selected = routes[selectedIndex];
 
   if (routeLine) map.removeLayer(routeLine);
@@ -97,39 +140,63 @@ function selectRoute(map, routes, selectedIndex, destination, container) {
 
   const eta = new Date(Date.now() + selected.durationMinutes * 60000);
   const etaText = eta.toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' });
-  const altNote = routes.length > 1 ? ` · ${routes.length - 1} alternatif rota (haritada dokun)` : '';
 
-  if (statusEl) {
-    statusEl.textContent = `${destination.label}: ${selected.distanceKm.toFixed(1)} km, ~${Math.round(selected.durationMinutes)} dk, varış ~${etaText}${altNote}`;
+  if (statusEl) statusEl.textContent = '';
+  if (summaryEl) {
+    summaryEl.style.display = 'block';
+    setField(summaryEl, 'route-destination', destination.label);
+    setField(summaryEl, 'route-distance', `${selected.distanceKm.toFixed(1)} km`);
+    setField(summaryEl, 'route-duration', `${Math.round(selected.durationMinutes)} dk`);
+    setField(summaryEl, 'route-eta', etaText);
+    setField(summaryEl, 'route-fuel', 'hesaplanıyor...');
+    setField(summaryEl, 'route-alternatives', routes.length > 1 ? `${routes.length - 1} tane (haritada dokun)` : 'yok');
   }
 
   startGuidance(selected);
 }
 
 /**
- * Rota mesafesine göre yaklaşık yakıt maliyetini hesaplayıp durum satırına
- * ekler - hesaplama bittiğinde eklenir (rota anında görünsün, maliyet
- * hesaplaması ağ isteği gerektirdiği için biraz gecikebilir).
+ * @param {HTMLElement} summaryEl
+ * @param {string} field
+ * @param {string} value
+ */
+function setField(summaryEl, field, value) {
+  const el = summaryEl.querySelector(`[data-${field}]`);
+  if (el) el.textContent = value;
+}
+
+/**
+ * Rota mesafesine göre yaklaşık yakıt maliyetini hesaplayıp rota özeti
+ * kartındaki "Tahmini Yakıt" alanına yazar - hesaplama bittiğinde doldurulur
+ * (rota anında görünsün, maliyet hesaplaması ağ isteği gerektirdiği için
+ * biraz gecikebilir).
  * @param {HTMLElement|null} statusEl
  * @param {import('../core/gps-tracker.js').LivePosition} current
  * @param {number} distanceKm
  */
 async function appendRouteFuelCost(statusEl, current, distanceKm) {
+  const summaryEl = statusEl?.parentElement?.querySelector('[data-route-summary]');
+
   try {
     const location = await reverseGeocodeIlIlce(current.latitude, current.longitude);
-    if (!location) return;
+    if (!location) {
+      if (summaryEl) setField(summaryEl, 'route-fuel', 'bilinmiyor');
+      return;
+    }
 
     const prices = await getFuelPrices(location.il, location.ilce, current.longitude);
     const withPrice = prices.find((p) => p.benzin !== null);
-    if (!withPrice) return;
+    if (!withPrice) {
+      if (summaryEl) setField(summaryEl, 'route-fuel', 'bilinmiyor');
+      return;
+    }
 
     const litersPer100Km = await estimateAverageConsumption();
     const { liters, cost } = estimateFuelCost(distanceKm, litersPer100Km, withPrice.benzin);
 
-    if (statusEl) {
-      statusEl.textContent += ` · ~${liters.toFixed(1)} L, ~${cost.toFixed(0)} ₺ (yakıt tahmini)`;
-    }
+    if (summaryEl) setField(summaryEl, 'route-fuel', `~${liters.toFixed(1)} L (~${cost.toFixed(0)} ₺)`);
   } catch (error) {
     logWarn('navigation-route-panel', 'Rota yakıt maliyeti hesaplanamadı', error);
+    if (summaryEl) setField(summaryEl, 'route-fuel', 'hesaplanamadı');
   }
 }

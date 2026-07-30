@@ -29,6 +29,7 @@ import { reverseGeocodeIlIlce } from '../maps/reverse-geocode.js';
 import { getFuelPrices } from '../maps/fuel-price-service.js';
 import { drawRouteTo } from './navigation-route-panel.js';
 import { bindLiveSpeedLimitCard, bindFullscreenToggle } from './navigation-map-overlay.js';
+import { bindTapRouteMode } from './navigation-tap-route.js';
 import { openAddressSearchModal } from './components/address-search-modal.js';
 import { getFuelStationCache, onFuelStationCacheUpdate, forceRefreshFuelStationCache } from '../maps/fuel-station-cache.js';
 import { registerRefreshHandler } from '../core/refresh-registry.js';
@@ -120,21 +121,63 @@ export function initNavigationView() {
     </div>
     <div data-map-wrapper style="position:relative;">
       <div data-map style="height: 48vh; border-radius: var(--sda-radius-md); overflow:hidden;"></div>
-      <button type="button" data-fullscreen-toggle class="sda-nav-btn" style="position:absolute; top:8px; right:8px; z-index:5; background:var(--sda-bg-elevated); padding:8px;">
-        ${iconMarkup('fullscreen', { size: 20 })}
-      </button>
+      <div style="position:absolute; top:8px; right:8px; z-index:5; display:flex; flex-direction:column; gap:6px;">
+        <button type="button" data-fullscreen-toggle class="sda-nav-btn" style="background:var(--sda-bg-elevated); padding:8px;">
+          ${iconMarkup('fullscreen', { size: 20 })}
+        </button>
+        <button type="button" data-satellite-toggle class="sda-nav-btn" style="background:var(--sda-bg-elevated); padding:8px;">
+          ${iconMarkup('satellite', { size: 20 })}
+        </button>
+        <button type="button" data-tap-route-toggle class="sda-nav-btn" style="background:var(--sda-bg-elevated); padding:8px;">
+          ${iconMarkup('location', { size: 20 })}
+        </button>
+      </div>
     </div>
     <p data-status class="sda-card__label" style="margin-top:8px;"></p>
+    <div data-route-summary class="sda-card sda-card--elevated" style="display:none; margin-top:8px;">
+      <div style="display:grid; grid-template-columns:repeat(2, 1fr); gap:10px;">
+        <div><p class="sda-card__label">Hedef</p><p data-route-destination class="sda-card__value" style="font-size:0.95rem;">--</p></div>
+        <div><p class="sda-card__label">Mesafe</p><p data-route-distance class="sda-card__value" style="font-size:0.95rem;">--</p></div>
+        <div><p class="sda-card__label">Süre</p><p data-route-duration class="sda-card__value" style="font-size:0.95rem;">--</p></div>
+        <div><p class="sda-card__label">Varış Saati</p><p data-route-eta class="sda-card__value" style="font-size:0.95rem;">--</p></div>
+        <div><p class="sda-card__label">Tahmini Yakıt</p><p data-route-fuel class="sda-card__value" style="font-size:0.95rem;">--</p></div>
+        <div><p class="sda-card__label">Alternatifler</p><p data-route-alternatives class="sda-card__value" style="font-size:0.95rem;">--</p></div>
+      </div>
+    </div>
     <div data-gps-detail style="margin-top:8px;"></div>
     <div data-poi-list style="margin-top:8px;"></div>
     <div data-price-table style="margin-top:16px;"></div>
   `;
 
   map = L.map(container.querySelector('[data-map]')).setView(DEFAULT_CENTER, 6);
-  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+
+  const streetLayer = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
     attribution: '© OpenStreetMap katkıda bulunanlar',
     maxZoom: 19,
   }).addTo(map);
+
+  // Uydu görünümü: Esri'nin ücretsiz, API anahtarı gerektirmeyen görüntü
+  // servisi - yalnızca "Uydu" düğmesine basılınca yüklenir (varsayılan
+  // katman hâlâ sokak haritasıdır), gereksiz veri kullanımı olmasın diye.
+  const satelliteLayer = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
+    attribution: 'Kaynak: Esri, Maxar, Earthstar Geographics',
+    maxZoom: 19,
+  });
+
+  let satelliteActive = false;
+  const satelliteButton = container.querySelector('[data-satellite-toggle]');
+  satelliteButton?.addEventListener('click', () => {
+    satelliteActive = !satelliteActive;
+    if (satelliteActive) {
+      map.removeLayer(streetLayer);
+      satelliteLayer.addTo(map);
+      satelliteButton.innerHTML = iconMarkup('map', { size: 20 });
+    } else {
+      map.removeLayer(satelliteLayer);
+      streetLayer.addTo(map);
+      satelliteButton.innerHTML = iconMarkup('satellite', { size: 20 });
+    }
+  });
 
   onPosition(updateVehicleMarker);
   const last = getLastPosition();
@@ -154,6 +197,7 @@ export function initNavigationView() {
 
   bindLiveSpeedLimitCard(container);
   bindFullscreenToggle(container, map);
+  bindTapRouteMode(container, map);
 
   container.querySelector('[data-address-search]')?.addEventListener('click', () => {
     openAddressSearchModal(map, container);

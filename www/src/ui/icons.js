@@ -23,6 +23,7 @@ const ICON_MAP = {
   panel: 'speed',
   trip: 'route',
   map: 'map',
+  satellite: 'satellite_alt',
   fuel: 'local_gas_station',
   diagnostics: 'build',
   analytics: 'auto_awesome',
