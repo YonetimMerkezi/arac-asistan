@@ -18,6 +18,7 @@
 
 import L from 'leaflet';
 import { iconMarkup } from './icons.js';
+import { getVehicleMarkerShape } from '../core/vehicle-marker-preference.js';
 import { onPosition } from '../core/gps-tracker.js';
 import { getSpeedLimitNear } from '../maps/speed-limit-service.js';
 import { getLivePidValue, onLiveDataChange } from '../core/vehicle-live-data-store.js';
@@ -40,28 +41,42 @@ let unsubscribeSpeedLimit = null;
 export function bindLiveSpeedLimitCard(container) {
   unsubscribeSpeedLimit?.();
 
+  /** @type {number|null} En son OBD hız okuması (varsa GPS'e tercih edilir - daha doğrudur). */
+  let lastObdSpeed = null;
+
+  /** @type {number|null} En son bilinen yol limiti (renklendirme kararı için). */
+  let lastLimit = null;
+
+  const renderSpeed = (gpsSpeedKmh) => {
+    const speedEl = container.querySelector('[data-live-speed]');
+    if (!speedEl) return;
+
+    const displaySpeed = lastObdSpeed ?? gpsSpeedKmh;
+    speedEl.textContent = displaySpeed !== null ? String(Math.round(displaySpeed)) : '--';
+
+    const exceeding = lastLimit !== null && displaySpeed !== null && displaySpeed > lastLimit;
+    speedEl.style.color = exceeding ? 'var(--sda-danger)' : 'var(--sda-text-primary)';
+  };
+
   const updateObdSpeed = () => {
-    const obdEl = container.querySelector('[data-live-speed-obd]');
-    if (!obdEl) return;
     const cached = getLivePidValue('0D');
-    obdEl.textContent = cached ? String(Math.round(cached.value)) : '--';
+    lastObdSpeed = cached ? cached.value : null;
+    renderSpeed(null);
   };
 
   updateObdSpeed();
   const unsubscribeObd = onLiveDataChange(updateObdSpeed);
 
   const unsubscribePosition = onPosition(async (position) => {
-    const gpsEl = container.querySelector('[data-live-speed-gps]');
     const limitEl = container.querySelector('[data-live-speed-limit]');
-    if (!gpsEl || !limitEl) return;
 
-    gpsEl.textContent = String(Math.round(position.speedKmh));
+    renderSpeed(position.speedKmh);
 
     const limit = await getSpeedLimitNear(position.latitude, position.longitude);
-    limitEl.textContent = limit !== null ? String(limit) : '--';
+    lastLimit = limit;
+    if (limitEl) limitEl.textContent = limit !== null ? String(limit) : '--';
 
-    const exceeding = limit !== null && position.speedKmh > limit;
-    gpsEl.style.color = exceeding ? 'var(--sda-danger)' : 'var(--sda-text-primary)';
+    renderSpeed(position.speedKmh); // Limit yeni geldiyse renk kararını tazele.
   });
 
   unsubscribeSpeedLimit = () => {
@@ -112,7 +127,7 @@ export function bindFullscreenToggle(container, map) {
       } else {
         originalSpeedCardParent.appendChild(speedCard);
       }
-      speedCard.style.cssText = 'display:flex; align-items:center; justify-content:space-around; margin-bottom:8px;';
+      speedCard.style.cssText = 'display:flex; align-items:center; gap:12px; margin-bottom:8px;';
       if (statusEl) statusEl.setAttribute('style', originalStatusStyle);
       button.innerHTML = iconMarkup('fullscreen', { size: 22 });
     }
@@ -161,5 +176,64 @@ export function bindSatelliteToggle(container, map, streetLayer) {
       streetLayer.addTo(map);
       satelliteButton.innerHTML = iconMarkup('satellite', { size: 20 });
     }
+  });
+}
+
+/**
+ * Verilen konuma göre araç işaretçisini oluşturur/günceller - kullanıcının
+ * Ayarlar'dan seçtiği şekle (nokta/ok/araba) göre çizilir, ok ve araba
+ * şekilleri Google Haritalar'daki gibi araç yönüne göre döner.
+ * @param {import('leaflet').Map} map
+ * @param {import('leaflet').Marker|null} existingMarker
+ * @param {import('../core/gps-tracker.js').LivePosition} position
+ * @returns {import('leaflet').Marker}
+ */
+export function renderVehicleMarker(map, existingMarker, position) {
+  const latLng = [position.latitude, position.longitude];
+  const heading = position.headingDeg ?? 0;
+  const shape = getVehicleMarkerShape();
+  const icon = buildVehicleIcon(shape, heading);
+
+  if (!existingMarker) {
+    return L.marker(latLng, { icon }).addTo(map);
+  }
+
+  existingMarker.setLatLng(latLng);
+  existingMarker.setIcon(icon);
+  return existingMarker;
+}
+
+/**
+ * Seçili şekle göre (Google Haritalar'daki gibi yöne dönen) araç
+ * işaretçisi ikonu üretir.
+ * @param {import('../core/vehicle-marker-preference.js').MarkerShape} shape
+ * @param {number} headingDeg
+ * @returns {import('leaflet').DivIcon}
+ */
+function buildVehicleIcon(shape, headingDeg) {
+  if (shape === 'dot') {
+    return L.divIcon({
+      className: 'sda-vehicle-marker',
+      html: '<div style="width:14px;height:14px;border-radius:50%;background:#FF8A3D;border:2px solid white;"></div>',
+      iconSize: [14, 14],
+      iconAnchor: [7, 7],
+    });
+  }
+
+  if (shape === 'car') {
+    return L.divIcon({
+      className: 'sda-vehicle-marker',
+      html: `<div style="transform:rotate(${headingDeg}deg); transition:transform 200ms linear; filter:drop-shadow(0 1px 3px rgba(0,0,0,0.5));">${iconMarkup('car', { size: 30 })}</div>`,
+      iconSize: [30, 30],
+      iconAnchor: [15, 15],
+    });
+  }
+
+  // 'arrow' (varsayılan, Google Haritalar'ın hareket halindeki oku gibi).
+  return L.divIcon({
+    className: 'sda-vehicle-marker',
+    html: `<div style="width:0; height:0; border-left:9px solid transparent; border-right:9px solid transparent; border-bottom:20px solid var(--sda-accent); transform:rotate(${headingDeg}deg); transition:transform 200ms linear; filter:drop-shadow(0 1px 3px rgba(0,0,0,0.5));"></div>`,
+    iconSize: [18, 20],
+    iconAnchor: [9, 10],
   });
 }

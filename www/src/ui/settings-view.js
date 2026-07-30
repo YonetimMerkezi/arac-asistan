@@ -22,7 +22,7 @@ import {
   onStateChange as onBluetoothStateChange,
 } from '../bluetooth/bluetooth-manager.js';
 import { getLastPosition } from '../core/gps-tracker.js';
-import { bindBackgroundServiceToggle, bindKeepAwakeToggle, bindOwnerNameInput, bindBootNotificationToggle } from './settings-preferences-panel.js';
+import { bindBackgroundServiceToggle, bindKeepAwakeToggle, bindOwnerNameInput, bindBootNotificationToggle, bindVehicleMarkerShapeSelector } from './settings-preferences-panel.js';
 import { bindBackupPanel } from './settings-backup-panel.js';
 import { bindGreetingPanel } from './settings-greeting-panel.js';
 import { createCorridor, listCorridors, deleteCorridor } from '../data/corridor-repository.js';
@@ -125,6 +125,15 @@ function render(container) {
       <button type="button" data-boot-notification-toggle class="sda-nav-btn" style="width:100%; flex-direction:row; gap:8px;"></button>
     </div>
 
+    <div class="sda-card" style="margin-bottom:16px;">
+      <p class="sda-card__label">Haritadaki Araç İşaretçisi</p>
+      <div style="display:flex; gap:8px; margin-top:8px;">
+        <button type="button" data-marker-shape="arrow" class="sda-nav-btn" style="flex:1;">Ok</button>
+        <button type="button" data-marker-shape="car" class="sda-nav-btn" style="flex:1;">Araba</button>
+        <button type="button" data-marker-shape="dot" class="sda-nav-btn" style="flex:1;">Nokta</button>
+      </div>
+    </div>
+
     <h3 style="margin:4px 0;">Ekran</h3>
     <div class="sda-card" style="margin-bottom:16px;">
       <p class="sda-card__label">Ekran Açık Kalsın</p>
@@ -188,6 +197,7 @@ function render(container) {
   bindKeepAwakeToggle(container);
   bindOwnerNameInput(container);
   bindBootNotificationToggle(container);
+  bindVehicleMarkerShapeSelector(container);
   bindBackupPanel(container);
   bindGreetingPanel(container);
   bindCorridorForm(container);

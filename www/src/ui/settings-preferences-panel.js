@@ -20,6 +20,7 @@ import {
 } from '../core/background-service.js';
 import { isKeepAwakeEnabled, setKeepAwakeEnabled } from '../core/keep-awake.js';
 import { getOwnerName, setOwnerName } from '../core/owner-name-store.js';
+import { getVehicleMarkerShape, setVehicleMarkerShape } from '../core/vehicle-marker-preference.js';
 
 /**
  * @param {HTMLElement} container
@@ -110,5 +111,33 @@ export function bindBootNotificationToggle(container) {
     const next = !current;
     await setBootNotificationEnabled(next);
     updateLabel(next);
+  });
+}
+
+/**
+ * Haritadaki araç işaretçisinin şeklini (nokta/ok/araba) seçen düğme grubunu
+ * bağlar.
+ * @param {HTMLElement} container
+ */
+export function bindVehicleMarkerShapeSelector(container) {
+  const buttons = container.querySelectorAll('[data-marker-shape]');
+  if (buttons.length === 0) return;
+
+  const updateActive = (shape) => {
+    buttons.forEach((button) => {
+      const isActive = button.getAttribute('data-marker-shape') === shape;
+      button.style.background = isActive ? 'var(--sda-accent)' : 'var(--sda-bg-elevated)';
+      button.style.color = isActive ? 'white' : '';
+    });
+  };
+
+  updateActive(getVehicleMarkerShape());
+
+  buttons.forEach((button) => {
+    button.addEventListener('click', async () => {
+      const shape = button.getAttribute('data-marker-shape');
+      await setVehicleMarkerShape(shape);
+      updateActive(shape);
+    });
   });
 }

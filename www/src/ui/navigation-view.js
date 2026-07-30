@@ -28,7 +28,7 @@ import { getFavoriteLocation, setFavoriteLocation } from '../maps/favorites-stor
 import { reverseGeocodeIlIlce } from '../maps/reverse-geocode.js';
 import { getFuelPrices } from '../maps/fuel-price-service.js';
 import { drawRouteTo, openGoogleMapsGeneral } from './navigation-route-panel.js';
-import { bindLiveSpeedLimitCard, bindFullscreenToggle, bindSatelliteToggle } from './navigation-map-overlay.js';
+import { bindLiveSpeedLimitCard, bindFullscreenToggle, bindSatelliteToggle, renderVehicleMarker } from './navigation-map-overlay.js';
 import { bindTapRouteMode } from './navigation-tap-route.js';
 import { openAddressSearchModal } from './components/address-search-modal.js';
 import { getFuelStationCache, onFuelStationCacheUpdate, forceRefreshFuelStationCache } from '../maps/fuel-station-cache.js';
@@ -82,20 +82,13 @@ export function initNavigationView() {
 
   container.innerHTML = `
     <div data-nav-chrome>
-      <div data-speed-card class="sda-card sda-card--elevated" style="display:flex; align-items:center; justify-content:space-around; margin-bottom:8px;">
-        <div style="text-align:center;">
-          <p data-live-speed-obd style="font-family:var(--sda-font-display); font-size:1.5rem; margin:0; color:var(--sda-text-primary);">--</p>
-          <p class="sda-card__label" style="margin:2px 0 0 0; font-size:0.7rem;">Araç (OBD)</p>
+      <div data-speed-card style="display:flex; align-items:center; gap:12px; margin-bottom:8px;">
+        <div style="width:52px; height:52px; border-radius:50%; background:white; border:4px solid #E02020; display:flex; align-items:center; justify-content:center; flex-shrink:0;">
+          <span data-live-speed-limit style="color:#1a1a1a; font-weight:800; font-size:1.05rem; font-family:var(--sda-font-display);">--</span>
         </div>
-        <div style="width:1px; height:36px; background:var(--sda-hairline);"></div>
-        <div style="text-align:center;">
-          <p data-live-speed-gps style="font-family:var(--sda-font-display); font-size:1.5rem; margin:0; color:var(--sda-text-primary);">--</p>
-          <p class="sda-card__label" style="margin:2px 0 0 0; font-size:0.7rem;">GPS</p>
-        </div>
-        <div style="width:1px; height:36px; background:var(--sda-hairline);"></div>
-        <div style="text-align:center;">
-          <p data-live-speed-limit style="font-family:var(--sda-font-display); font-size:1.5rem; margin:0; color:var(--sda-text-muted);">--</p>
-          <p class="sda-card__label" style="margin:2px 0 0 0; font-size:0.7rem;">Yol Limiti</p>
+        <div>
+          <p data-live-speed style="font-family:var(--sda-font-display); font-size:1.9rem; margin:0; font-weight:700; color:var(--sda-text-primary); line-height:1;">--</p>
+          <p class="sda-card__label" style="margin:2px 0 0 0; font-size:0.7rem;">km/h</p>
         </div>
       </div>
       <button type="button" data-address-search class="sda-btn sda-btn--primary" style="width:100%; margin-bottom:8px;">
@@ -145,13 +138,16 @@ export function initNavigationView() {
       ${iconMarkup('map', { size: 18 })}<span>Google Haritalar'da Yol Tarifi Al</span>
     </button>
     <div data-route-summary class="sda-card sda-card--elevated" style="display:none; margin-top:8px;">
-      <div style="display:grid; grid-template-columns:repeat(2, 1fr); gap:10px;">
-        <div><p class="sda-card__label">Hedef</p><p data-route-destination class="sda-card__value" style="font-size:0.95rem;">--</p></div>
-        <div><p class="sda-card__label">Mesafe</p><p data-route-distance class="sda-card__value" style="font-size:0.95rem;">--</p></div>
-        <div><p class="sda-card__label">Süre</p><p data-route-duration class="sda-card__value" style="font-size:0.95rem;">--</p></div>
-        <div><p class="sda-card__label">Varış Saati</p><p data-route-eta class="sda-card__value" style="font-size:0.95rem;">--</p></div>
-        <div><p class="sda-card__label">Tahmini Yakıt</p><p data-route-fuel class="sda-card__value" style="font-size:0.95rem;">--</p></div>
-        <div><p class="sda-card__label">Alternatifler</p><p data-route-alternatives class="sda-card__value" style="font-size:0.95rem;">--</p></div>
+      <p data-route-destination class="sda-card__label" style="margin:0 0 4px 0;">--</p>
+      <div style="display:flex; align-items:baseline; gap:8px; margin-bottom:8px;">
+        <span data-route-duration style="font-family:var(--sda-font-display); font-size:2rem; font-weight:700; color:var(--sda-accent); line-height:1;">--</span>
+        <span data-route-distance style="font-size:1rem; color:var(--sda-text-muted);">--</span>
+        <span style="color:var(--sda-text-faint);">·</span>
+        <span data-route-eta style="font-size:1rem; color:var(--sda-text-muted);">--</span>
+      </div>
+      <div style="display:flex; justify-content:space-between; font-size:0.8rem; color:var(--sda-text-muted);">
+        <span data-route-fuel>--</span>
+        <span data-route-alternatives>--</span>
       </div>
     </div>
     <div data-gps-detail style="margin-top:8px;"></div>
@@ -237,25 +233,16 @@ function categoryLabel(category) {
 /**
  * @param {import('../core/gps-tracker.js').LivePosition} position
  */
+/**
+ * @param {import('../core/gps-tracker.js').LivePosition} position
+ */
 function updateVehicleMarker(position) {
   if (!map) return;
-  const latLng = [position.latitude, position.longitude];
-
-  if (!vehicleMarker) {
-    vehicleMarker = L.marker(latLng, {
-      icon: L.divIcon({
-        className: 'sda-vehicle-marker',
-        html: '<div style="width:14px;height:14px;border-radius:50%;background:#FF8A3D;border:2px solid white;"></div>',
-        iconSize: [14, 14],
-      }),
-    }).addTo(map);
-  } else {
-    vehicleMarker.setLatLng(latLng);
-  }
+  vehicleMarker = renderVehicleMarker(map, vehicleMarker, position);
 
   if (!hasAutoCentered) {
     hasAutoCentered = true;
-    map.setView(latLng, 15);
+    map.setView([position.latitude, position.longitude], 15);
   }
 }
 
