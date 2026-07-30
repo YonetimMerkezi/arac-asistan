@@ -131,6 +131,19 @@ export function buildRadiusNodeQuery(lat, lon, radiusMeters, tagFilter) {
 }
 
 /**
+ * Verilen dikdörtgen (bbox) sınırları içindeki, belirli etikete sahip TÜM
+ * node'ları getiren sorguyu oluşturur - offline-region-download.js'in
+ * "bölge indir" özelliği bunu kullanır (tek bir yarıçap yerine, indirilen
+ * harita karolarıyla AYNI dikdörtgen alan taranır).
+ * @param {{south:number, west:number, north:number, east:number}} bbox
+ * @param {string} tagFilter - Overpass etiket filtresi, ör. `"amenity"="fuel"`.
+ * @returns {string}
+ */
+export function buildBboxNodeQuery(bbox, tagFilter) {
+  return `[out:json][timeout:25];node[${tagFilter}](${bbox.south},${bbox.west},${bbox.north},${bbox.east});out;`;
+}
+
+/**
  * Bir merkez nokta etrafındaki en yakın "way" (yol) üzerindeki bir etiketi
  * (ör. maxspeed) getiren sorguyu oluşturur.
  * @param {number} lat

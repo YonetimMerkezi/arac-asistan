@@ -12,15 +12,7 @@
 
 import { runOverpassQuery, buildNearestRoadQuery } from './overpass-client.js';
 import { haversineDistanceKm } from '../trip/geo-utils.js';
-import { logInfo, logWarn } from '../core/logger.js';
-
-/**
- * @type {number} Overpass arama yarıçapı (metre). DÜZELTME: önceden 60m'di -
- * GPS sapması + aracın yolun tam üstünde olmaması yüzünden çoğu zaman hiçbir
- * way bulunamıyordu (sürekli "--" görünmesinin ana nedeni buydu). Geniş
- * tutuldu ki en yakın etiketli yol daha güvenilir yakalansın.
- */
-const SEARCH_RADIUS_METERS = 250;
+import { logInfo } from '../core/logger.js';
 
 /** @type {number} İki sorgu arasında araç en az bu kadar (metre) yol almalı. */
 const MIN_QUERY_DISTANCE_METERS = 300;
@@ -53,24 +45,10 @@ export async function getSpeedLimitNear(lat, lon) {
 
   lastQueryLocation = { lat, lon, at: now };
 
-  const elements = await runOverpassQuery(buildNearestRoadQuery(lat, lon, SEARCH_RADIUS_METERS));
-
-  if (elements.length === 0) {
-    // Overpass-client.js zaten her ayna denemesini kendi içinde logluyor -
-    // burada ayrıca "hiç yol bulunamadı" (ağ hatası VEYA bu yarıçapta hiç
-    // yol yok) durumunu AYRI logluyoruz - "--" görününce log'a bakınca
-    // hangi durumda olduğumuz belli olsun.
-    logWarn('speed-limit-service', `${SEARCH_RADIUS_METERS}m içinde hiçbir yol bulunamadı (ağ hatası veya bu bölgede yol verisi yok)`);
-    lastKnownLimit = null;
-    return null;
-  }
-
+  const elements = await runOverpassQuery(buildNearestRoadQuery(lat, lon, 60));
   const withMaxspeed = elements.find((el) => el.tags?.maxspeed);
 
   if (!withMaxspeed) {
-    // Yol(lar) bulundu ama HİÇBİRİNDE maxspeed etiketi yok - bu, ağ hatası
-    // DEĞİL, OSM veri eksikliği (Türkiye'de yerel yollarda sık görülür).
-    logWarn('speed-limit-service', `${elements.length} yol bulundu ama hiçbirinde maxspeed etiketi yok`);
     lastKnownLimit = null;
     return null;
   }

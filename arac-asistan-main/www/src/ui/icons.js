@@ -40,6 +40,7 @@ const ICON_MAP = {
   'arrow-down': 'arrow_downward',
   search: 'search',
   refresh: 'refresh',
+  download: 'download_for_offline',
 
   // Bağlantı / donanım
   bluetooth: 'bluetooth',

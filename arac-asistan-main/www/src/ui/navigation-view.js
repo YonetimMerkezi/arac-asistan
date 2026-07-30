@@ -29,6 +29,8 @@ import { reverseGeocodeIlIlce } from '../maps/reverse-geocode.js';
 import { getFuelPrices } from '../maps/fuel-price-service.js';
 import { drawRouteTo, openGoogleMapsGeneral } from './navigation-route-panel.js';
 import { bindLiveSpeedLimitCard, bindFullscreenToggle, bindSatelliteToggle, renderVehicleMarker } from './navigation-map-overlay.js';
+import { offlineTileLayer } from '../maps/offline-tile-layer.js';
+import { openOfflineRegionPanel } from './offline-region-panel.js';
 import { bindTapRouteMode } from './navigation-tap-route.js';
 import { openAddressSearchModal } from './components/address-search-modal.js';
 import { getFuelStationCache, onFuelStationCacheUpdate, forceRefreshFuelStationCache } from '../maps/fuel-station-cache.js';
@@ -82,13 +84,13 @@ export function initNavigationView() {
 
   container.innerHTML = `
     <div data-nav-chrome>
-      <div data-speed-card style="display:flex; align-items:center; gap:12px; margin-bottom:8px;">
-        <div style="width:52px; height:52px; border-radius:50%; background:white; border:4px solid #E02020; display:flex; align-items:center; justify-content:center; flex-shrink:0;">
-          <span data-live-speed-limit style="color:#1a1a1a; font-weight:800; font-size:1.05rem; font-family:var(--sda-font-display);">--</span>
+      <div data-speed-card style="display:flex; align-items:center; gap:10px; margin-bottom:8px;">
+        <div data-speed-dial style="width:76px; height:76px; border-radius:50%; background:#1c1f26; border:3px solid #3a3f4a; display:flex; flex-direction:column; align-items:center; justify-content:center; flex-shrink:0;">
+          <p data-live-speed style="font-family:var(--sda-font-display); font-size:1.7rem; margin:0; font-weight:800; color:#ffffff; line-height:1;">--</p>
+          <p style="margin:2px 0 0 0; font-size:0.6rem; color:#9aa1ad; letter-spacing:0.02em;">Km/sa</p>
         </div>
-        <div>
-          <p data-live-speed style="font-family:var(--sda-font-display); font-size:1.9rem; margin:0; font-weight:700; color:var(--sda-text-primary); line-height:1;">--</p>
-          <p class="sda-card__label" style="margin:2px 0 0 0; font-size:0.7rem;">km/h</p>
+        <div style="width:56px; height:56px; border-radius:50%; background:white; border:4px solid #E02020; display:flex; align-items:center; justify-content:center; flex-shrink:0;">
+          <span data-live-speed-limit style="color:#1a1a1a; font-weight:800; font-size:1.15rem; font-family:var(--sda-font-display);">--</span>
         </div>
       </div>
       <button type="button" data-address-search class="sda-btn sda-btn--primary" style="width:100%; margin-bottom:8px;">
@@ -126,6 +128,9 @@ export function initNavigationView() {
         </button>
         <button type="button" data-tap-route-toggle title="Haritaya dokunarak nokta nokta rota oluştur" class="sda-nav-btn" style="background:var(--sda-bg-elevated); padding:8px; box-shadow:var(--sda-shadow-elevated);">
           ${iconMarkup('add-location', { size: 20 })}
+        </button>
+        <button type="button" data-offline-region-toggle title="Bu bölgeyi çevrimdışı kullanım için indir" class="sda-nav-btn" style="background:var(--sda-bg-elevated); padding:8px; box-shadow:var(--sda-shadow-elevated);">
+          ${iconMarkup('download', { size: 20 })}
         </button>
       </div>
       <div data-tap-route-controls style="display:none; position:absolute; bottom:8px; left:8px; right:8px; z-index:1200; gap:8px;">
@@ -166,7 +171,7 @@ export function initNavigationView() {
   setTimeout(() => map?.invalidateSize(), 200);
   setTimeout(() => map?.invalidateSize(), 600);
 
-  const streetLayer = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+  const streetLayer = offlineTileLayer({
     attribution: '© OpenStreetMap katkıda bulunanlar',
     maxZoom: 19,
   }).addTo(map);
@@ -192,6 +197,10 @@ export function initNavigationView() {
   bindLiveSpeedLimitCard(container);
   bindFullscreenToggle(container, map);
   bindTapRouteMode(container, map);
+
+  container.querySelector('[data-offline-region-toggle]')?.addEventListener('click', () => {
+    openOfflineRegionPanel(map);
+  });
 
   container.querySelector('[data-address-search]')?.addEventListener('click', () => {
     openAddressSearchModal(map, container);
@@ -443,8 +452,10 @@ function renderPoiMarkersAndList(results, listEl, statusEl, category) {
   }
 
   if (statusEl) {
+    const isOffline = results.length > 0 && results.every((p) => p.isOffline);
+    const offlineNote = isOffline ? ' · çevrimdışı önbellekten (indirildiği tarihten sonraki değişiklikler yansımaz)' : '';
     statusEl.textContent = results.length > 0
-      ? `${results.length} sonuç bulundu, en yakını ${results[0].distanceKm.toFixed(1)} km`
+      ? `${results.length} sonuç bulundu, en yakını ${results[0].distanceKm.toFixed(1)} km${offlineNote}`
       : 'Bu bölgede OpenStreetMap üzerinde kayıtlı sonuç bulunamadı.';
   }
 }

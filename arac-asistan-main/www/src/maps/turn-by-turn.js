@@ -20,14 +20,20 @@ import { haversineDistanceKm } from '../trip/geo-utils.js';
 import { speak } from '../voice/tts.js';
 import { logInfo } from '../core/logger.js';
 
-/** @type {number} Bir adımın konumuna bu mesafede (metre) yaklaşınca talimat seslendirilir. */
-const ANNOUNCE_RADIUS_METERS = 80;
+/** @type {number} Bir adımın konumuna bu mesafede (metre) yaklaşınca ERKEN (ön) uyarı seslendirilir - "200 metre sonra sola dönün" gibi. */
+const EARLY_ANNOUNCE_RADIUS_METERS = 200;
+
+/** @type {number} Bir adımın konumuna bu mesafede (metre) yaklaşınca SON (dönüş anı) talimatı seslendirilir. */
+const NEAR_ANNOUNCE_RADIUS_METERS = 20;
 
 /** @type {import('./route-service.js').RouteStep[]} */
 let activeSteps = [];
 
-/** @type {number} Sıradaki (henüz seslendirilmemiş) adımın indeksi. */
+/** @type {number} Sıradaki (henüz son talimatı seslendirilmemiş) adımın indeksi. */
 let nextStepIndex = 0;
+
+/** @type {boolean} Sıradaki adım için ERKEN uyarı zaten söylendi mi (aynı adım için iki kez söylenmesin). */
+let earlyAnnouncedForCurrentStep = false;
 
 /** @type {(() => void)|null} */
 let unsubscribe = null;
@@ -42,6 +48,7 @@ export function startGuidance(route) {
 
   activeSteps = route.steps ?? [];
   nextStepIndex = 0;
+  earlyAnnouncedForCurrentStep = false;
   if (activeSteps.length === 0) return;
 
   unsubscribe = onPosition(handlePosition);
@@ -64,6 +71,19 @@ export function stopGuidance() {
   unsubscribe = null;
   activeSteps = [];
   nextStepIndex = 0;
+  earlyAnnouncedForCurrentStep = false;
+}
+
+/**
+ * Bir talimatı "ön uyarı" biçimine çevirir - ör. "Sola dönün" -> "200 metre
+ * sonra sola dönün". Yalnızca ilk harfi küçültülür (talimat cümle içine
+ * gömülüyor, büyük harfle başlamamalı).
+ * @param {string} instruction
+ * @returns {string}
+ */
+function toEarlyInstruction(instruction) {
+  const lowered = instruction.charAt(0).toLowerCase() + instruction.slice(1);
+  return `${EARLY_ANNOUNCE_RADIUS_METERS} metre sonra ${lowered}`;
 }
 
 /**
@@ -80,8 +100,18 @@ function handlePosition(position) {
     position.latitude, position.longitude, step.location[0], step.location[1],
   ) * 1000;
 
-  if (distanceMeters <= ANNOUNCE_RADIUS_METERS) {
+  if (distanceMeters <= NEAR_ANNOUNCE_RADIUS_METERS) {
+    // Dönüş anı geldi - asıl talimat (kısa, doğrudan) seslendirilir.
     void speak(step.instruction);
     nextStepIndex += 1;
+    earlyAnnouncedForCurrentStep = false;
+    return;
+  }
+
+  if (!earlyAnnouncedForCurrentStep && distanceMeters <= EARLY_ANNOUNCE_RADIUS_METERS) {
+    // Dönüşten önce bir kez ön uyarı - gerçek dönüş talimatıyla KARIŞTIRILMASIN
+    // diye farklı cümle kalıbı kullanılır ("200 metre sonra ...").
+    void speak(toEarlyInstruction(step.instruction));
+    earlyAnnouncedForCurrentStep = true;
   }
 }
