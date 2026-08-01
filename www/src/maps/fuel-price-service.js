@@ -80,6 +80,63 @@ function istanbulSideFor(lon) {
   return lon < 29.05 ? 'İstanbul Avrupa' : 'İstanbul Anadolu';
 }
 
+/** @type {string} Sedat'ın GitHub Actions'ının periyodik ürettiği, tüm il/ilçe
+ * akaryakıt fiyatlarını içeren statik yedek JSON — worker'a hiç ulaşılamazsa
+ * (ör. ağ tarafında workers.dev engeli) bu denenir. */
+const STATIC_FALLBACK_URL = 'https://raw.githubusercontent.com/YonetimMerkezi/arac-asistan/main/veri/akaryakit-veri.json';
+
+/**
+ * doviz.com'un il/ilçe adlarını URL slug'ına çevirme kuralıyla BİREBİR aynı
+ * dönüşümü yapar (Türkçe karakterleri sadeleştirir, boşlukları tireye çevirir).
+ * Statik yedek JSON'daki anahtarlarla eşleşmesi için gereklidir.
+ * @param {string} ad
+ * @returns {string}
+ */
+function slugYap(ad) {
+  return ad
+    .toLocaleLowerCase('tr')
+    .replace(/ı/g, 'i').replace(/i̇/g, 'i')
+    .replace(/ğ/g, 'g').replace(/ü/g, 'u')
+    .replace(/ş/g, 's').replace(/ö/g, 'o')
+    .replace(/ç/g, 'c')
+    .trim()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '');
+}
+
+/** @type {{data: Object, fetchedAt: number}|null} Statik yedek JSON'un bellek içi önbelleği (tekrar tekrar indirmemek için). */
+let statikYedekOnbellek = null;
+
+/**
+ * Statik yedek JSON'u indirir (10 dakikada bir en fazla) ve verilen il/ilçe
+ * için istasyon listesini döndürür.
+ * @param {string} il
+ * @param {string} ilce
+ * @returns {Promise<FuelStationPrice[]>}
+ */
+async function statikYedektenGetir(il, ilce) {
+  if (!statikYedekOnbellek || Date.now() - statikYedekOnbellek.fetchedAt > CACHE_TTL_MS) {
+    const response = await fetch(STATIC_FALLBACK_URL + '?t=' + Date.now());
+    if (!response.ok) throw new Error(`Yedek JSON hatası: ${response.status}`);
+    const data = await response.json();
+    statikYedekOnbellek = { data, fetchedAt: Date.now() };
+  }
+
+  const ilSlug = slugYap(il);
+  const ilceSlug = slugYap(ilce);
+  const ilKaydi = statikYedekOnbellek.data.iller?.[ilSlug];
+  const ilceKaydi = ilKaydi?.ilceler?.[ilceSlug];
+  if (!ilceKaydi) throw new Error(`Yedekte bulunamadı: ${ilSlug}/${ilceSlug}`);
+
+  return (ilceKaydi.istasyonlar ?? []).map((s) => ({
+    dagitici: s.dagitici,
+    benzin: s.benzin,
+    motorin: s.motorin,
+    lpg: s.lpg,
+    tarih: s.tarih ?? null,
+  }));
+}
+
 /**
  * Verilen il/ilçe için akaryakıt fiyat listesini getirir (10 dakikalık önbellekle).
  * @param {string} il
@@ -97,6 +154,7 @@ export async function getFuelPrices(il, ilce, currentLon) {
     return cache.stations;
   }
 
+  // 1. KADEME: Cloudflare Worker (birincil, en güncel kaynak).
   try {
     const endpoint = await resolveWorkerEndpoint();
     const url = `${endpoint}?il=${encodeURIComponent(normalizedIl)}&ilce=${encodeURIComponent(ilce)}`;
@@ -116,9 +174,20 @@ export async function getFuelPrices(il, ilce, currentLon) {
 
     cache = { key: cacheKey, fetchedAt: Date.now(), stations };
     return stations;
-  } catch (error) {
-    logWarn('fuel-price-service', `Yakıt fiyatları alınamadı: ${normalizedIl}/${ilce}`, error);
-    return cache?.stations ?? []; // ağ hatasında varsa eski önbelleği döndür, yoksa boş liste
+  } catch (workerHata) {
+    logWarn('fuel-price-service', `Worker'dan alınamadı, statik yedek deneniyor: ${normalizedIl}/${ilce}`, workerHata);
+
+    // 2. KADEME: Worker'a hiç ulaşılamazsa, GitHub Actions'ın periyodik
+    // ürettiği statik yedek JSON'u dene (tüm il/ilçe verisini içerir).
+    try {
+      const stations = await statikYedektenGetir(normalizedIl, ilce);
+      cache = { key: cacheKey, fetchedAt: Date.now(), stations };
+      return stations;
+    } catch (yedekHata) {
+      logWarn('fuel-price-service', `Yakıt fiyatları alınamadı: ${normalizedIl}/${ilce}`, yedekHata);
+      // 3. KADEME: İkisi de başarısızsa, cihazdaki son bilinen değere düş.
+      return cache?.stations ?? [];
+    }
   }
 }
 
