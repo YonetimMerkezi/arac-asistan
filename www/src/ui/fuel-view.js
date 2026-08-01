@@ -61,6 +61,9 @@ export function initFuelView() {
     <canvas data-fuel-chart height="140" style="margin-bottom:16px;"></canvas>
     <div data-fuel-list style="margin-bottom:24px;"></div>
 
+    <h3 style="margin:4px 0;">Bölgedeki Yakıt Fiyatları</h3>
+    <div data-fuel-price-list style="margin-bottom:24px;"></div>
+
     <h3 style="margin:4px 0;">Bakım</h3>
     <form data-maintenance-form class="sda-card" style="display:grid; gap:8px; margin-bottom:16px;">
       <select name="type" style="padding:8px;">
@@ -77,15 +80,18 @@ export function initFuelView() {
   bindFuelForm(container);
   bindMaintenanceForm(container);
   void renderFuelSection(container);
+  renderFuelPriceList(container);
 
   // "Kaydırarak yenile" - istasyon/fiyat önbelleğini tazeler VE yakıt
   // kayıt listesi/grafiğini yeniden çizer.
   registerRefreshHandler('fuel', async () => {
     await forceRefreshFuelStationCache();
     await renderFuelSection(container);
+    renderFuelPriceList(container);
   });
   void renderMaintenanceSection(container);
   populateStationSelect(container);
+  onFuelStationCacheUpdate(() => renderFuelPriceList(container));
 }
 
 /**
@@ -223,6 +229,39 @@ function bindFuelForm(container) {
     form.reset();
     await renderFuelSection(container);
   });
+}
+
+/**
+ * Bölgenin (mevcut il/ilçenin) güncel yakıt fiyat listesini EKRANIN ALTINDA
+ * SABİT bir liste olarak gösterir - yakındaki istasyonlar (POI/harita)
+ * bulunamasa bile fiyat verisi geldiyse burada görünmeye devam eder (POI
+ * araması ile fiyat listesi cache'te birbirinden bağımsız iki alan - bkz.
+ * maps/fuel-station-cache.js).
+ * @param {HTMLElement} container
+ */
+function renderFuelPriceList(container) {
+  const listEl = container.querySelector('[data-fuel-price-list]');
+  if (!listEl) return;
+
+  const { prices, location } = getFuelStationCache();
+
+  if (!prices || prices.length === 0) {
+    listEl.innerHTML = '<p class="sda-card__label">Bu bölge için fiyat verisi henüz yok.</p>';
+    return;
+  }
+
+  const baslik = location ? `<p class="sda-card__label" style="margin-bottom:8px;">${location.il} / ${location.ilce}</p>` : '';
+
+  listEl.innerHTML = baslik + prices.map((p) => `
+    <div class="sda-card" style="margin-bottom:8px; display:flex; justify-content:space-between; align-items:center; gap:8px;">
+      <span class="sda-card__label" style="font-size:0.95rem;">${p.dagitici}</span>
+      <span class="sda-card__value" style="font-size:0.9rem; text-align:right;">
+        ${p.benzin != null ? `Benzin ${p.benzin.toFixed(2)}₺` : ''}
+        ${p.motorin != null ? ` · Motorin ${p.motorin.toFixed(2)}₺` : ''}
+        ${p.lpg != null ? ` · LPG ${p.lpg.toFixed(2)}₺` : ''}
+      </span>
+    </div>
+  `).join('');
 }
 
 /**
