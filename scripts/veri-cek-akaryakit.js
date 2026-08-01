@@ -83,15 +83,29 @@ async function havuzdaCalistir(gorevler, isleyici, eszamanlilik) {
   return sonuclar;
 }
 
-/** href="/akaryakit-fiyatlari/{tekSegment}" biçimindeki linkleri (il listesi) çıkarır. */
+/** İsim çıkarımı için: bir href eşleşmesinden hemen sonraki küçük bir
+ * pencereyi alır, içindeki iç etiketleri (varsa ikon/span vb.) temizleyip
+ * ilk anlamlı metni döndürür. Bulunamazsa slug'ı büyük harfle başlatıp döner. */
+function yakinMetniCikar(html, eslesmeSonu, slugYedek) {
+  const pencere = html.slice(eslesmeSonu, eslesmeSonu + 200);
+  const kapaninaKadar = pencere.split(/<\/a>/i)[0] ?? pencere;
+  const temiz = kapaninaKadar.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
+  if (temiz.length > 0 && temiz.length < 60) return temiz;
+  return slugYedek.charAt(0).toLocaleUpperCase('tr') + slugYedek.slice(1);
+}
+
+/** href="/akaryakit-fiyatlari/{tekSegment}" biçimindeki linkleri (il listesi) çıkarır.
+ * Tırnak türünden (tek/çift) ve linkin iç işaretlemesinden bağımsız çalışır -
+ * sadece href niteliğini arar, kapanış etiketine/metne güvenmez. */
 function ilLinkleriniCikar(html) {
-  const re = /href="\/akaryakit-fiyatlari\/([a-z0-9-]+)"[^>]*>([^<]+)<\/a>/g;
+  const re = /href=["']\/akaryakit-fiyatlari\/([a-z0-9-]+)["']/g;
   const bulunan = new Map();
   let m;
   while ((m = re.exec(html)) !== null) {
     const slug = m[1];
-    const ad = m[2].trim();
-    if (!bulunan.has(slug)) bulunan.set(slug, ad);
+    if (!bulunan.has(slug)) {
+      bulunan.set(slug, yakinMetniCikar(html, re.lastIndex, slug));
+    }
   }
   return bulunan;
 }
@@ -99,13 +113,14 @@ function ilLinkleriniCikar(html) {
 /** href="/akaryakit-fiyatlari/{il}/{ilce}" biçimindeki linkleri (ilçe listesi) çıkarır. */
 function ilceLinkleriniCikar(html, ilSlug) {
   const kacis = ilSlug.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-  const re = new RegExp(`href="\\/akaryakit-fiyatlari\\/${kacis}\\/([a-z0-9-]+)"[^>]*>([^<]+)<\\/a>`, 'g');
+  const re = new RegExp(`href=["']\\/akaryakit-fiyatlari\\/${kacis}\\/([a-z0-9-]+)["']`, 'g');
   const bulunan = new Map();
   let m;
   while ((m = re.exec(html)) !== null) {
     const slug = m[1];
-    const ad = m[2].trim();
-    if (!bulunan.has(slug)) bulunan.set(slug, ad);
+    if (!bulunan.has(slug)) {
+      bulunan.set(slug, yakinMetniCikar(html, re.lastIndex, slug));
+    }
   }
   return bulunan;
 }
@@ -148,8 +163,12 @@ function fiyatTablosunuAyristir(html) {
 async function calistir() {
   console.log('İl listesi keşfediliyor...');
   const anaSayfaHtml = await sayfaGetir(BASE);
+  console.log(`Ana sayfa uzunluğu: ${anaSayfaHtml.length} karakter, "akaryakit-fiyatlari" geçiş sayısı: ${(anaSayfaHtml.match(/akaryakit-fiyatlari/g) || []).length}`);
   const iller = ilLinkleriniCikar(anaSayfaHtml);
   console.log(`${iller.size} il bulundu.`);
+  if (iller.size === 0) {
+    console.log('Teşhis için ilk 800 karakter:', anaSayfaHtml.slice(0, 800));
+  }
 
   const ilSlugListesi = Array.from(iller.keys());
   const sonuc = { iller: {} };
