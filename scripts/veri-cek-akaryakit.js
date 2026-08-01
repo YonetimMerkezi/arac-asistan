@@ -24,8 +24,12 @@
 // bu normaldir, GitHub Actions'ın ücretsiz plan sınırı (job başına 6 saat)
 // içinde rahatça kalır.
 
-const fs = require('fs');
-const path = require('path');
+import fs from 'fs';
+import path from 'path';
+import { fileURLToPath } from 'url';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 const BASE = 'https://www.doviz.com/akaryakit-fiyatlari';
 const ESZAMANLILIK = 5;           // aynı anda en fazla 5 istek
