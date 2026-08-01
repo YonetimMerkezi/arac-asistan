@@ -52,6 +52,7 @@ export function initFuelView() {
         <option value="benzin">Benzin</option>
         <option value="motorin">Motorin</option>
       </select>
+      <input name="pricePerLiter" type="number" step="0.01" data-price-input placeholder="Birim Fiyat (₺/L) - istasyon yoksa elle girin" style="padding:8px;">
       <input name="liters" type="number" step="0.01" placeholder="Litre" required style="padding:8px;">
       <input name="amount" type="number" step="0.01" placeholder="Tutar (₺)" required style="padding:8px;">
       <input name="odometer" type="number" step="1" placeholder="Kilometre (opsiyonel)" style="padding:8px;">
@@ -114,13 +115,18 @@ function populateStationSelect(container) {
 
   let eligibleStations = rebuildOptions();
 
+  const priceInput = container.querySelector('[data-price-input]');
   const litersInput = container.querySelector('input[name="liters"]');
   const amountInput = container.querySelector('input[name="amount"]');
 
   /**
-   * @returns {number|null} Seçili istasyon/yakıt türü için birim fiyat, yoksa null.
+   * @returns {number|null} Kullanılacak birim fiyat: "Birim Fiyat" alanına
+   * kullanıcı elle bir şey yazmışsa ONU (istasyon verisi gelmediğinde de
+   * hesaplama çalışsın diye), yazılmamışsa seçili istasyonun fiyatını döndürür.
    */
   const currentPricePerLiter = () => {
+    const manuel = parseFloat(priceInput?.value);
+    if (manuel > 0) return manuel;
     const station = eligibleStations[Number(select.value)];
     const fuelType = fuelTypeSelect?.value ?? 'lpg';
     return station?.[fuelType] ?? null;
@@ -150,7 +156,16 @@ function populateStationSelect(container) {
     eligibleStations = rebuildOptions();
     recalcAmountFromLiters();
   });
-  select.addEventListener('change', recalcAmountFromLiters);
+  select.addEventListener('change', () => {
+    // İstasyon seçilince birim fiyatı "Birim Fiyat" alanına da yazar - hem
+    // görünür olsun hem kullanıcı isterse üzerine yazıp değiştirebilsin.
+    const station = eligibleStations[Number(select.value)];
+    const fuelType = fuelTypeSelect?.value ?? 'lpg';
+    const fiyat = station?.[fuelType];
+    if (priceInput && fiyat != null) priceInput.value = fiyat;
+    recalcAmountFromLiters();
+  });
+  priceInput?.addEventListener('input', recalcAmountFromLiters);
   litersInput.addEventListener('input', recalcAmountFromLiters);
   amountInput.addEventListener('input', recalcLitersFromAmount);
 
@@ -167,6 +182,8 @@ function populateStationSelect(container) {
     );
     if (matchIndex !== -1) {
       select.value = String(matchIndex);
+      const fiyat = eligibleStations[matchIndex]?.[pending.fuelType];
+      if (priceInput && fiyat != null) priceInput.value = fiyat;
       recalcAmountFromLiters();
     }
   }
