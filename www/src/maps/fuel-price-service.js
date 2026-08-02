@@ -108,6 +108,20 @@ function slugYap(ad) {
 let statikYedekOnbellek = null;
 
 /**
+ * Statik yedek JSON'u indirir (10 dakikada bir en fazla) ve ham veriyi döndürür.
+ * @returns {Promise<Object>}
+ */
+async function statikYedekVeriyiYukle() {
+  if (!statikYedekOnbellek || Date.now() - statikYedekOnbellek.fetchedAt > CACHE_TTL_MS) {
+    const response = await fetch(STATIC_FALLBACK_URL + '?t=' + Date.now());
+    if (!response.ok) throw new Error(`Yedek JSON hatası: ${response.status}`);
+    const data = await response.json();
+    statikYedekOnbellek = { data, fetchedAt: Date.now() };
+  }
+  return statikYedekOnbellek.data;
+}
+
+/**
  * Statik yedek JSON'u indirir (10 dakikada bir en fazla) ve verilen il/ilçe
  * için istasyon listesini döndürür.
  * @param {string} il
@@ -115,16 +129,11 @@ let statikYedekOnbellek = null;
  * @returns {Promise<FuelStationPrice[]>}
  */
 async function statikYedektenGetir(il, ilce) {
-  if (!statikYedekOnbellek || Date.now() - statikYedekOnbellek.fetchedAt > CACHE_TTL_MS) {
-    const response = await fetch(STATIC_FALLBACK_URL + '?t=' + Date.now());
-    if (!response.ok) throw new Error(`Yedek JSON hatası: ${response.status}`);
-    const data = await response.json();
-    statikYedekOnbellek = { data, fetchedAt: Date.now() };
-  }
+  const data = await statikYedekVeriyiYukle();
 
   const ilSlug = slugYap(il);
   const ilceSlug = slugYap(ilce);
-  const ilKaydi = statikYedekOnbellek.data.iller?.[ilSlug];
+  const ilKaydi = data.iller?.[ilSlug];
   const ilceKaydi = ilKaydi?.ilceler?.[ilceSlug];
   if (!ilceKaydi) throw new Error(`Yedekte bulunamadı: ${ilSlug}/${ilceSlug}`);
 
@@ -135,6 +144,40 @@ async function statikYedektenGetir(il, ilce) {
     lpg: s.lpg,
     tarih: s.tarih ?? null,
   }));
+}
+
+/**
+ * Bir ilin TÜM ilçelerindeki fiyat kayıtlarını, dağıtıcı adına göre
+ * tekilleştirerek (aynı dağıtıcı birden fazla ilçede varsa ilk bulunan
+ * kaydı kullanarak) birleştirir. Belirli bir ilçenin fiyat listesinde
+ * olmayan bir marka (ör. o ilçede raporlanan bir Opet yoksa ama ilin başka
+ * bir ilçesinde varsa), "Marka Ata" listesinde yine de seçilebilsin diye
+ * kullanılır - SADECE statik yedek JSON'dan (worker'ın tek-ilçe sorgusu bu
+ * genişletilmiş görünümü sağlayamaz, ilin TÜM ilçe verisi yalnızca bizim
+ * periyodik ürettiğimiz JSON'da bir arada bulunuyor).
+ * @param {string} il
+ * @returns {Promise<FuelStationPrice[]>}
+ */
+export async function getProvinceFuelPrices(il) {
+  const data = await statikYedekVeriyiYukle();
+  const ilSlug = slugYap(il);
+  const ilKaydi = data.iller?.[ilSlug];
+  if (!ilKaydi) return [];
+
+  const birlesikMap = new Map();
+  for (const ilceKaydi of Object.values(ilKaydi.ilceler ?? {})) {
+    for (const s of ilceKaydi.istasyonlar ?? []) {
+      if (!s.dagitici || birlesikMap.has(s.dagitici)) continue;
+      birlesikMap.set(s.dagitici, {
+        dagitici: s.dagitici,
+        benzin: s.benzin,
+        motorin: s.motorin,
+        lpg: s.lpg,
+        tarih: s.tarih ?? null,
+      });
+    }
+  }
+  return Array.from(birlesikMap.values());
 }
 
 /**
