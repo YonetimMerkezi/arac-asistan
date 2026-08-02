@@ -46,20 +46,38 @@ export function brandBadgeMarkup(brandName, options = {}) {
   const visual = resolveBrandVisual(brandName);
   const fontSize = Math.max(10, Math.round(size * 0.36));
 
-  const badgeStyle = `
-    display:inline-flex; align-items:center; justify-content:center;
-    width:${size}px; height:${size}px; border-radius:50%; overflow:hidden;
-    background:${visual.color}; color:${visual.textColor};
-    font-weight:700; font-size:${fontSize}px; letter-spacing:0.02em;
-    flex-shrink:0; ${extraStyle}
-  `;
+  // ÖNEMLİ: TEK SATIR olmalı - bu değer daha sonra <img onerror="...">
+  // içine, TEK TIRNAKLI bir JS string literal'i olarak gömülüyor. İçinde
+  // gerçek bir satır sonu (newline) karakteri olursa (ör. çok satırlı bir
+  // template literal kullanılsaydı), tarayıcı onerror kodunu çalıştırmaya
+  // çalıştığında "SyntaxError: Invalid or unexpected token" verir - JS
+  // string literal'leri kaçırılmamış satır sonu içeremez.
+  const badgeStyle = `display:inline-flex; align-items:center; justify-content:center; width:${size}px; height:${size}px; border-radius:50%; overflow:hidden; background:${visual.color}; color:${visual.textColor}; font-weight:700; font-size:${fontSize}px; letter-spacing:0.02em; flex-shrink:0; ${extraStyle}`;
 
   const initialsMarkup = `<span class="sda-brand-badge" style="${badgeStyle}" title="${visual.label}">${visual.initials}</span>`;
   if (!brandName) return initialsMarkup;
 
   const slug = logoKeyFor(brandName, visual);
-  const escapedFallback = initialsMarkup.replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+  const escapedFallback = onerrorIcinKacir(initialsMarkup);
   return `<img src="assets/brand-logos/${slug}.png" alt="${visual.label}" title="${visual.label}" style="${badgeStyle} object-fit:cover;" onerror="this.outerHTML='${escapedFallback}'">`;
+}
+
+/**
+ * Bir HTML parçasını, <img onerror="this.outerHTML='...'"> içine TEK
+ * TIRNAKLI bir JS string literal'i olarak GÜVENLE gömülebilecek hâle
+ * getirir: çift/tek tırnakları HTML varlığına çevirir VE (en kritiği) her
+ * türlü satır sonu/fazla boşluğu TEK boşluğa indirger - aksi hâlde
+ * kaçırılmamış bir satır sonu, tarayıcı onerror kodunu çalıştırmaya
+ * çalıştığında SyntaxError'a yol açar.
+ * @param {string} html
+ * @returns {string}
+ */
+function onerrorIcinKacir(html) {
+  return html
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;')
+    .replace(/\s+/g, ' ')
+    .trim();
 }
 
 /**
@@ -76,7 +94,7 @@ export function brandMarkerMarkup(brandName) {
   let innerContent = initialsInner;
   if (brandName) {
     const slug = logoKeyFor(brandName, visual);
-    const escapedFallback = initialsInner.replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+    const escapedFallback = onerrorIcinKacir(initialsInner);
     innerContent = `<img src="assets/brand-logos/${slug}.png" alt="${visual.label}" style="transform: rotate(45deg); width:18px; height:18px; object-fit:contain; border-radius:50%;" onerror="this.outerHTML='${escapedFallback}'">`;
   }
 
