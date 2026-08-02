@@ -10,6 +10,24 @@
 import { resolveBrandVisual, normalizeBrandKey } from '../../core/brand-catalog.js';
 
 /**
+ * Bir marka için logo dosya adında kullanılacak anahtarı belirler.
+ * ÖNEMLİ: aynı markanın birden fazla yazımı olabilir (ör. "Total" / "Total
+ * Energies" - şirket 2021'de yeniden markalaştı, fiyat listelerinde HER
+ * İKİ isim de geçebiliyor). Marka katalogda TANIMLIYSA (bkz.
+ * core/brand-catalog.js BRAND_CATALOG), o kaydın kanonik `key`'i kullanılır
+ * - böylece "Total" ve "Total Energies" AYNI total.png dosyasını bulur,
+ * ayrı ayrı logo eklemeye gerek kalmaz. Katalogda TANIMLI DEĞİLSE (ör.
+ * henüz sadece logo dosyası eklenmiş ama BRAND_CATALOG'a girilmemiş bir
+ * marka), doğrudan markanın kendi adından türetilen sade bir anahtar kullanılır.
+ * @param {string} brandName
+ * @param {import('../../core/brand-catalog.js').BrandVisual} visual
+ * @returns {string}
+ */
+function logoKeyFor(brandName, visual) {
+  return visual.key !== 'bilinmeyen' ? visual.key : normalizeBrandKey(brandName);
+}
+
+/**
  * Bir markanın rozet HTML'ini üretir (innerHTML şablonlarına gömülebilir).
  * `assets/brand-logos/{marka}.png` yolunda gerçek bir logo dosyası varsa onu
  * kullanır (Sedat'ın eklediği görseller) - dosya bulunamazsa (<img onerror>)
@@ -39,7 +57,7 @@ export function brandBadgeMarkup(brandName, options = {}) {
   const initialsMarkup = `<span class="sda-brand-badge" style="${badgeStyle}" title="${visual.label}">${visual.initials}</span>`;
   if (!brandName) return initialsMarkup;
 
-  const slug = normalizeBrandKey(brandName);
+  const slug = logoKeyFor(brandName, visual);
   const escapedFallback = initialsMarkup.replace(/"/g, '&quot;').replace(/'/g, '&#39;');
   return `<img src="assets/brand-logos/${slug}.png" alt="${visual.label}" title="${visual.label}" style="${badgeStyle} object-fit:cover;" onerror="this.outerHTML='${escapedFallback}'">`;
 }
@@ -57,7 +75,7 @@ export function brandMarkerMarkup(brandName) {
 
   let innerContent = initialsInner;
   if (brandName) {
-    const slug = normalizeBrandKey(brandName);
+    const slug = logoKeyFor(brandName, visual);
     const escapedFallback = initialsInner.replace(/"/g, '&quot;').replace(/'/g, '&#39;');
     innerContent = `<img src="assets/brand-logos/${slug}.png" alt="${visual.label}" style="transform: rotate(45deg); width:18px; height:18px; object-fit:contain; border-radius:50%;" onerror="this.outerHTML='${escapedFallback}'">`;
   }
