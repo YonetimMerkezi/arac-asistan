@@ -49,12 +49,42 @@ let inboundBuffer = '';
 /** @type {(() => void)|null} */
 let unsubscribeData = null;
 
+/** @type {number} Son başarıyla çözülen (resolve edilen) yanıtın zamanı (ms). */
+let lastResolvedAt = Date.now();
+
+/** @type {number} Bu süre (ms) boyunca hiç yanıt gelmezse (komut gönderilmeye devam etse
+ * bile) "bekçi" devreye girip kuyruğu sıfırlar - ana düzeltmenin (chunk başına tek yanıt
+ * işleme hatası) dışında, bilinmeyen bir sebeple yine tıkanma olursa kendiliğinden toparlanmak için. */
+const WATCHDOG_STALL_MS = 20000;
+
+setInterval(() => {
+  if (!unsubscribeData) return; // Bağlı değilken bekçi çalışmasın.
+  if (queue.length === 0 && !processing) return; // Zaten boşta - normal.
+
+  const stalledMs = Date.now() - lastResolvedAt;
+  if (stalledMs > WATCHDOG_STALL_MS) {
+    logWarn('elm327', `Bekçi: ${stalledMs}ms'dir hiç yanıt gelmedi, kuyruk/arabellek sıfırlanıyor (kuyruk derinliği: ${queue.length})`);
+    inboundBuffer = '';
+    processing = false;
+    // Bekleyen komutları reddet ki çağıranlar sonsuza dek asılı kalmasın -
+    // dashboard-view.js zaten her PID hatasını yakalayıp bir sonrakine geçiyor.
+    while (queue.length > 0) {
+      const cmd = queue.shift();
+      clearTimeout(cmd.timeoutHandle);
+      cmd.reject(new Error('Bekçi: uzun süre yanıt alınamadı, kuyruk sıfırlandı'));
+    }
+    lastResolvedAt = Date.now();
+    processQueue();
+  }
+}, 5000);
+
 /**
  * Motoru başlatır: bluetooth-manager'dan gelen ham veriyi dinlemeye başlar.
  * connectToDevice() başarılı olduktan SONRA çağrılmalıdır.
  */
 export function attachElm327Transport() {
   if (unsubscribeData) return; // zaten bağlı
+  lastResolvedAt = Date.now();
   unsubscribeData = onData(handleIncomingChunk);
 }
 
@@ -163,30 +193,48 @@ function processQueue() {
 function handleIncomingChunk(chunk) {
   inboundBuffer += chunk;
 
-  if (!inboundBuffer.includes(PROMPT_CHAR)) return;
+  // KRİTİK DÜZELTME: Bluetooth yığını bazen BİRDEN FAZLA tamamlanmış
+  // ELM327 yanıtını TEK bir veri olayında art arda teslim edebilir (ör.
+  // "410C1AF8\r>410D3C\r>" gibi iki yanıt bitişik). Önceki sürüm sadece
+  // İLK '>' işaretine kadar olan kısmı işleyip KALANINI (zaten tamamlanmış
+  // olsa bile) arabellekte bırakıyordu - bu kalan, ancak YENİ bir veri
+  // olayı geldiğinde işlenirdi. Eğer bir sonraki veri olayı hiç gelmezse
+  // (adaptör sıradaki komutu bekliyorsa), o yanıt SONSUZA DEK arabellekte
+  // asılı kalıyordu; bir sonraki GERÇEK komutun yanıtı geldiğinde ise bu
+  // ESKİ veriyle yanlışlıkla eşleştiriliyordu. Sonuç: kuyruk kalıcı bir
+  // KAYMA (off-by-one) ile bozuluyor - her komut kendi yanıtı yerine BİR
+  // ÖNCEKİNİN yanıtını alıyor, expectedPid eşleşmediği için queryPid()
+  // sessizce null dönmeye devam ediyor. "Bağlantı yeşil/bağlı görünüyor
+  // ama hiçbir PID veri vermiyor" şikayetinin kök nedeni muhtemelen buydu.
+  // Düzeltme: arabellekte tamamlanmış kaç yanıt varsa HEPSİ tek seferde,
+  // bir sonraki veri olayını beklemeden işlenir.
+  while (inboundBuffer.includes(PROMPT_CHAR)) {
+    const [rawResponse] = inboundBuffer.split(PROMPT_CHAR);
+    inboundBuffer = inboundBuffer.slice(inboundBuffer.indexOf(PROMPT_CHAR) + 1);
 
-  const [rawResponse] = inboundBuffer.split(PROMPT_CHAR);
-  inboundBuffer = inboundBuffer.slice(inboundBuffer.indexOf(PROMPT_CHAR) + 1);
+    const current = queue.shift();
+    processing = false;
+    if (!current) {
+      // Sahipsiz veri (ör. adaptörün kendiliğinden gönderdiği gürültü) -
+      // yok say, arabellekte başka tamamlanmış yanıt varsa onu işlemeye devam et.
+      continue;
+    }
 
-  const current = queue.shift();
-  processing = false;
-  if (!current) {
-    // Sahipsiz veri (ör. adaptörün kendiliğinden gönderdiği gürültü) - yok say.
-    return;
+    clearTimeout(current.timeoutHandle);
+    const cleaned = rawResponse.replace(/\r/g, '\n').trim();
+
+    // TEŞHİS: önceden yalnızca BAŞARISIZLIKLAR loglanıyordu - başarı oranını
+    // görmenin tek yolu, günlükte "yok"luğu yorumlamaktı. Yavaş (>1s) yanıtlar
+    // özellikle kuyruk/adaptör gecikmesini teşhis etmek için loglanır.
+    const roundTripMs = Date.now() - (current.sentAt ?? current.enqueuedAt);
+    if (roundTripMs > 1000) {
+      logInfo('elm327', `Yanıt geldi (${roundTripMs}ms sürdü): ${current.command} -> "${cleaned.slice(0, 40)}"`);
+    }
+
+    current.resolve(cleaned);
+    lastResolvedAt = Date.now();
   }
 
-  clearTimeout(current.timeoutHandle);
-  const cleaned = rawResponse.replace(/\r/g, '\n').trim();
-
-  // TEŞHİS: önceden yalnızca BAŞARISIZLIKLAR loglanıyordu - başarı oranını
-  // görmenin tek yolu, günlükte "yok"luğu yorumlamaktı. Yavaş (>1s) yanıtlar
-  // özellikle kuyruk/adaptör gecikmesini teşhis etmek için loglanır.
-  const roundTripMs = Date.now() - (current.sentAt ?? current.enqueuedAt);
-  if (roundTripMs > 1000) {
-    logInfo('elm327', `Yanıt geldi (${roundTripMs}ms sürdü): ${current.command} -> "${cleaned.slice(0, 40)}"`);
-  }
-
-  current.resolve(cleaned);
   processQueue();
 }
 
