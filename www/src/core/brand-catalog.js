@@ -36,6 +36,12 @@ export const BRAND_CATALOG = [
   { key: 'alpet', label: 'Alpet', color: '#00A651', textColor: '#FFFFFF', initials: 'AL' },
   { key: 'elloil', label: 'Elloil', color: '#1D9BF0', textColor: '#FFFFFF', initials: 'EL' },
   { key: 'sunpet', label: 'Sunpet', color: '#FFB100', textColor: '#14171C', initials: 'SU' },
+  { key: 'kadoil', label: 'Kadoil', color: '#E30613', textColor: '#FFFFFF', initials: 'KD' },
+  { key: 'go', label: 'Go', color: '#7DC242', textColor: '#FFFFFF', initials: 'GO' },
+  { key: 'parkoil', label: 'Parkoil', color: '#E4002B', textColor: '#FFFFFF', initials: 'PK' },
+  { key: 'petline', label: 'Petline', color: '#1E7A34', textColor: '#FFFFFF', initials: 'PL' },
+  { key: 'bestoil', label: 'BestOil', color: '#2E8B77', textColor: '#FFFFFF', initials: 'BO' },
+  { key: 'qplus', label: 'Q Plus', color: '#0066B3', textColor: '#FFFFFF', initials: 'QP' },
 ];
 
 /** @type {BrandVisual} Marka çözülemediğinde kullanılan nötr görsel. */
