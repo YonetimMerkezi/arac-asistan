@@ -29,7 +29,14 @@ export const BRAND_CATALOG = [
   { key: 'shell', label: 'Shell', color: '#FBCE07', textColor: '#DD1D21', initials: 'SH' },
   { key: 'bp', label: 'BP', color: '#009B3A', textColor: '#FFFFFF', initials: 'BP' },
   { key: 'total', label: 'Total', color: '#D2001C', textColor: '#FFFFFF', initials: 'TE' },
-  { key: 'totalenerji', label: 'Total Energies', color: '#D2001C', textColor: '#FFFFFF', initials: 'TE' },
+  // NOT: eskiden burada ayrı bir 'totalenerji' (Total Energies) girdisi vardı.
+  // "Total Energies" zaten yukarıdaki 'total' anahtarıyla kısmi eşleşme
+  // yoluyla (needle.includes('total')) doğru buluyor - ayrı girdiye gerek
+  // yok. O ayrı girdi kaldırıldı çünkü TAMAMEN FARKLI bir marka olan
+  // "Enerji"yi yanlışlıkla eşleştiriyordu ('totalenerji' anahtarı 'enerji'
+  // alt dizesini İÇERDİĞİ için b.key.includes(needle) yanlışlıkla true
+  // dönüyordu). "Enerji" kendi doğru kaydını aşağıda alıyor.
+  { key: 'enerji', label: 'Enerji', color: '#EF6C00', textColor: '#FFFFFF', initials: 'EN' },
   { key: 'aytemiz', label: 'Aytemiz', color: '#F7941E', textColor: '#14171C', initials: 'AY' },
   { key: 'moil', label: 'M Oil', color: '#6B2C91', textColor: '#FFFFFF', initials: 'MO' },
   { key: 'lukoil', label: 'Lukoil', color: '#ED1C24', textColor: '#FFFFFF', initials: 'LU' },
