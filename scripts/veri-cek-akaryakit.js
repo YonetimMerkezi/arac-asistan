@@ -98,7 +98,7 @@ function yakinMetniCikar(html, eslesmeSonu, slugYedek) {
  * Tırnak türünden (tek/çift) ve linkin iç işaretlemesinden bağımsız çalışır -
  * sadece href niteliğini arar, kapanış etiketine/metne güvenmez. */
 function ilLinkleriniCikar(html) {
-  const re = /href=["']\/akaryakit-fiyatlari\/([a-z0-9-]+)["']/g;
+  const re = /href=["'](?:https?:\/\/(?:www\.)?doviz\.com)?\/akaryakit-fiyatlari\/([a-z0-9-]+)["']/g;
   const bulunan = new Map();
   let m;
   while ((m = re.exec(html)) !== null) {
@@ -110,10 +110,10 @@ function ilLinkleriniCikar(html) {
   return bulunan;
 }
 
-/** href="/akaryakit-fiyatlari/{il}/{ilce}" biçimindeki linkleri (ilçe listesi) çıkarır. */
+/** href="/akaryakit-fiyatlari/{il}/{ilce}" (veya mutlak URL) biçimindeki linkleri (ilçe listesi) çıkarır. */
 function ilceLinkleriniCikar(html, ilSlug) {
   const kacis = ilSlug.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-  const re = new RegExp(`href=["']\\/akaryakit-fiyatlari\\/${kacis}\\/([a-z0-9-]+)["']`, 'g');
+  const re = new RegExp(`href=["'](?:https?:\\/\\/(?:www\\.)?doviz\\.com)?\\/akaryakit-fiyatlari\\/${kacis}\\/([a-z0-9-]+)["']`, 'g');
   const bulunan = new Map();
   let m;
   while ((m = re.exec(html)) !== null) {
@@ -125,16 +125,18 @@ function ilceLinkleriniCikar(html, ilSlug) {
   return bulunan;
 }
 
-/** Sayfadaki fiyat tablosunu (Dağıtıcı/Benzin/Motorin/LPG/Tarih) düz metinden ayrıştırır. */
+/** Sayfadaki fiyat tablosunu, doviz.com'un GERÇEK (kanıtlanmış) HTML yapısından
+ * ayrıştırır: <tbody><tr>...<span class="ml-8">Dağıtıcı</span>...
+ * <td class="text-bold p-12 text-center">Fiyat</td> x3...
+ * <td class="time p-12 text-center">Tarih</td>...</tr></tbody> */
 function fiyatTablosunuAyristir(html) {
-  const text = html
-    .replace(/<script[\s\S]*?<\/script>/gi, ' ')
-    .replace(/<style[\s\S]*?<\/style>/gi, ' ')
-    .replace(/<[^>]+>/g, ' ')
-    .replace(/&nbsp;/g, ' ')
-    .replace(/&amp;/g, '&')
-    .replace(/\s+/g, ' ')
-    .trim();
+  const istasyonlar = [];
+
+  const tbodyMatch = html.match(/<tbody>([\s\S]*?)<\/tbody>/i);
+  if (!tbodyMatch) return istasyonlar;
+
+  const tbody = tbodyMatch[1];
+  const satirlar = tbody.split(/<tr>/).slice(1);
 
   const sayi = (str) => {
     if (!str || str === '-') return null;
@@ -142,21 +144,26 @@ function fiyatTablosunuAyristir(html) {
     return isNaN(n) ? null : n;
   };
 
-  const satirRe = /([A-Za-zÇĞİÖŞÜçğıöşü0-9. ]{2,40}?)\s*₺?([\d,]+|-)\s*₺?([\d,]+|-)\s*₺?([\d,]+|-)\s*(\d{2}\.\d{2}\.\d{4})/g;
-  const istasyonlar = [];
-  let m;
-  while ((m = satirRe.exec(text)) !== null) {
-    const dagitici = m[1].trim();
-    // Çok kısa/anlamsız veya tekrarlanan eşleşmeleri ele (nav metinlerinden gelebilir)
-    if (dagitici.length < 2) continue;
-    istasyonlar.push({
-      dagitici,
-      benzin: sayi(m[2]),
-      motorin: sayi(m[3]),
-      lpg: sayi(m[4]),
-      tarih: m[5]
-    });
+  for (const satir of satirlar) {
+    const dagiticiMatch = satir.match(/<span class="ml-8">([^<]+)<\/span>/);
+    if (!dagiticiMatch) continue;
+    const dagitici = dagiticiMatch[1].trim();
+
+    const fiyatlar = [];
+    const fiyatRe = /<td class="text-bold p-12 text-center">([^<]*)<\/td>/g;
+    let m;
+    while ((m = fiyatRe.exec(satir)) !== null) {
+      fiyatlar.push(sayi(m[1].replace('₺', '').trim()));
+    }
+
+    const tarihMatch = satir.match(/<td class="time p-12 text-center">([^<]+)<\/td>/);
+    const tarih = tarihMatch ? tarihMatch[1].trim() : null;
+
+    if (fiyatlar.length >= 2) {
+      istasyonlar.push({ dagitici, benzin: fiyatlar[0] ?? null, motorin: fiyatlar[1] ?? null, lpg: fiyatlar[2] ?? null, tarih });
+    }
   }
+
   return istasyonlar;
 }
 
