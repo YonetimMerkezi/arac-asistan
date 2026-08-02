@@ -60,6 +60,18 @@ export function resolveBrandVisual(rawName) {
 }
 
 /**
+ * Serbest bir marka adını (dağıtıcı adı) normalize edilmiş bir anahtara
+ * çevirir - hem BRAND_CATALOG eşleştirmesinde hem de logo dosya adı
+ * üretiminde (bkz. ui/components/brand-badge.js) kullanılır, ikisi de AYNI
+ * kurala uysun diye dışa açıldı.
+ * @param {string} text
+ * @returns {string}
+ */
+export function normalizeBrandKey(text) {
+  return normalize(text);
+}
+
+/**
  * @param {string} text
  * @returns {string}
  */
