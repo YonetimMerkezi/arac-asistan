@@ -9,7 +9,7 @@
  * ---------------------------------------------------------------------------
  */
 
-import { listTrips, getTripDetail } from '../data/trip-repository.js';
+import { listTrips, getTripDetail, deleteTrip } from '../data/trip-repository.js';
 import { getActiveTripStats } from '../trip/trip-recorder.js';
 import { onPosition } from '../core/gps-tracker.js';
 import { renderTripSpeedChart, destroyTripChart } from '../charts/trip-chart.js';
@@ -20,6 +20,12 @@ import { onStateChange as onBluetoothStateChange } from '../bluetooth/bluetooth-
 import { getUnits } from '../core/units-store.js';
 import { formatDistanceOrSpeed } from '../core/unit-conversion.js';
 import { logError, logWarn } from '../core/logger.js';
+import L from 'leaflet';
+import { offlineTileLayer } from '../maps/offline-tile-layer.js';
+
+/** @type {import('leaflet').Map|null} Rota haritasının Leaflet örneği - detay
+ * ekranından çıkınca temizlenir (bellek sızıntısı önleme). */
+let tripMap = null;
 
 /** @type {HTMLElement|null} */
 let container = null;
@@ -84,18 +90,41 @@ async function renderList() {
   const listEl = container.querySelector('[data-trip-list]');
 
   for (const trip of trips) {
-    const item = document.createElement('button');
-    item.type = 'button';
+    const item = document.createElement('div');
     item.className = 'sda-card';
-    item.style.cssText = 'display:block; width:100%; text-align:left; margin-bottom: var(--sda-space-3); border:none; cursor:pointer;';
-    item.innerHTML = `
+    item.style.cssText = 'display:flex; align-items:center; gap:8px; width:100%; margin-bottom: var(--sda-space-3);';
+
+    const info = document.createElement('button');
+    info.type = 'button';
+    info.style.cssText = 'flex:1; text-align:left; border:none; background:none; cursor:pointer; padding:0;';
+    info.innerHTML = `
       <p class="sda-card__label">${new Date(trip.start_time).toLocaleDateString('tr-TR')}</p>
       <p class="sda-card__value" style="font-size:1.1rem;">${formatTripDistance(trip.distance_km)} · ${formatTripSpeed(trip.avg_speed_kmh)} ort.</p>
     `;
-    item.addEventListener('click', () => {
+    info.addEventListener('click', () => {
       viewMode = 'detail';
       renderDetail(trip.id);
     });
+
+    const deleteBtn = document.createElement('button');
+    deleteBtn.type = 'button';
+    deleteBtn.setAttribute('aria-label', 'Yolculuğu sil');
+    deleteBtn.style.cssText = 'border:none; background:none; cursor:pointer; font-size:1.2rem; padding:8px; color:var(--sda-danger, #e63946);';
+    deleteBtn.textContent = '🗑';
+    deleteBtn.addEventListener('click', async (event) => {
+      event.stopPropagation();
+      if (!confirm('Bu yolculuk kaydı silinsin mi? Bu işlem geri alınamaz.')) return;
+      try {
+        await deleteTrip(trip.id);
+        renderList();
+      } catch (error) {
+        logError('trip-view', 'Yolculuk silinemedi', error);
+        alert('Yolculuk silinemedi. Lütfen tekrar deneyin.');
+      }
+    });
+
+    item.appendChild(info);
+    item.appendChild(deleteBtn);
     listEl.appendChild(item);
   }
 }
@@ -164,6 +193,7 @@ async function renderDetail(tripId) {
       <div class="sda-card"><p class="sda-card__label">Ort. Hız</p><p class="sda-card__value">${formatTripSpeed(trip.avg_speed_kmh)}</p></div>
       <div class="sda-card"><p class="sda-card__label">Yakıt</p><p class="sda-card__value">${trip.fuel_used_l.toFixed(2)} L</p></div>
     </div>
+    ${points.length > 1 ? '<div data-trip-map style="height:280px; border-radius:var(--sda-radius-2); overflow:hidden; margin-bottom:var(--sda-space-4);"></div>' : ''}
     <canvas data-trip-chart height="180"></canvas>
     <div style="display:flex; gap: var(--sda-space-3); margin-top: var(--sda-space-4);">
       <button type="button" data-export="pdf" class="sda-nav-btn" style="background:var(--sda-accent-soft); flex:1;">PDF</button>
@@ -174,8 +204,12 @@ async function renderDetail(tripId) {
   const canvas = container.querySelector('[data-trip-chart]');
   if (canvas) renderTripSpeedChart(canvas, points);
 
+  const mapEl = container.querySelector('[data-trip-map]');
+  if (mapEl && points.length > 1) renderTripRouteMap(mapEl, points);
+
   container.querySelector('[data-back]')?.addEventListener('click', () => {
     if (canvas) destroyTripChart(canvas);
+    if (tripMap) { tripMap.remove(); tripMap = null; }
     renderList();
   });
 
@@ -198,6 +232,107 @@ async function renderDetail(tripId) {
       alert('Excel raporu oluşturulamadı. Lütfen tekrar deneyin.');
     }
   });
+}
+
+/**
+ * Bir yolculuğun GPS noktalarını haritada gösterir: rota, ANLIK HIZA göre
+ * renklendirilmiş kısa çizgi parçalarından oluşur; başlangıç (yeşil bayrak),
+ * bitiş (siyah/beyaz bayrak) ve tespit edilen duraklama noktaları (⏸)
+ * ayrıca işaretlenir.
+ * @param {HTMLElement} mapEl
+ * @param {import('../data/trip-repository.js').TripPoint[]} points
+ */
+function renderTripRouteMap(mapEl, points) {
+  if (tripMap) { tripMap.remove(); tripMap = null; }
+
+  tripMap = L.map(mapEl, { zoomControl: true });
+  offlineTileLayer({ attribution: '© OpenStreetMap katkıda bulunanlar' }).addTo(tripMap);
+
+  // Rota: her ardışık nokta çifti arasına, o segmentin hızına göre
+  // renklendirilmiş ayrı bir çizgi parçası çizilir - tek renkli tek çizgi
+  // yerine hız değişimini göz ile takip edilebilir kılar.
+  for (let i = 1; i < points.length; i++) {
+    const a = points[i - 1];
+    const b = points[i];
+    L.polyline([[a.latitude, a.longitude], [b.latitude, b.longitude]], {
+      color: colorForSpeed(b.speed_kmh),
+      weight: 5,
+      opacity: 0.85,
+    }).addTo(tripMap);
+  }
+
+  const flagIcon = (emoji) => L.divIcon({
+    className: 'sda-trip-flag-marker',
+    html: `<div style="font-size:22px; line-height:1; filter: drop-shadow(0 1px 2px rgba(0,0,0,0.5));">${emoji}</div>`,
+    iconSize: [24, 24],
+    iconAnchor: [12, 22],
+  });
+
+  const start = points[0];
+  const finish = points[points.length - 1];
+  L.marker([start.latitude, start.longitude], { icon: flagIcon('🟢') }).addTo(tripMap).bindPopup('Başlangıç');
+  L.marker([finish.latitude, finish.longitude], { icon: flagIcon('🏁') }).addTo(tripMap).bindPopup('Bitiş');
+
+  for (const stop of detectStops(points)) {
+    L.marker([stop.latitude, stop.longitude], {
+      icon: L.divIcon({
+        className: 'sda-trip-stop-marker',
+        html: '<div style="width:14px;height:14px;border-radius:50%;background:#555;border:2px solid white;display:flex;align-items:center;justify-content:center;font-size:9px;">⏸</div>',
+        iconSize: [16, 16],
+      }),
+    }).addTo(tripMap).bindPopup('Duraklama');
+  }
+
+  const bounds = L.latLngBounds(points.map((p) => [p.latitude, p.longitude]));
+  tripMap.fitBounds(bounds, { padding: [24, 24] });
+  setTimeout(() => tripMap?.invalidateSize(), 150);
+}
+
+/**
+ * Hıza göre bir renk döndürür - rotayı görsel olarak "yavaş → hızlı" diye okunur kılar.
+ * @param {number|null} kmh
+ * @returns {string}
+ */
+function colorForSpeed(kmh) {
+  if (kmh == null || kmh < 5) return '#8d99ae';   // duruyor/çok yavaş - gri
+  if (kmh < 30) return '#e63946';                  // yavaş (şehir içi/trafik) - kırmızı
+  if (kmh < 60) return '#f4a261';                  // orta - turuncu
+  if (kmh < 90) return '#2a9d8f';                   // hızlı - yeşil/teal
+  return '#264653';                                 // çok hızlı (otoyol) - koyu lacivert
+}
+
+/**
+ * Ardışık düşük hızlı (< 3 km/h) noktalardan, en az 60 saniye süren
+ * grupları "duraklama" sayar ve her grubun orta noktasını döndürür - her
+ * düşük hızlı GPS noktasını ayrı ayrı işaretlemek haritayı gereksiz
+ * doldurur.
+ * @param {import('../data/trip-repository.js').TripPoint[]} points
+ * @returns {import('../data/trip-repository.js').TripPoint[]}
+ */
+function detectStops(points) {
+  const STOP_SPEED_THRESHOLD = 3;
+  const MIN_STOP_DURATION_MS = 60000;
+  const stops = [];
+  let runStart = null;
+
+  const closeRun = (runEndIndex) => {
+    if (runStart === null) return;
+    const startP = points[runStart];
+    const endP = points[runEndIndex];
+    if (endP.recorded_at - startP.recorded_at >= MIN_STOP_DURATION_MS) {
+      stops.push(points[Math.floor((runStart + runEndIndex) / 2)]);
+    }
+    runStart = null;
+  };
+
+  points.forEach((p, i) => {
+    const isSlow = (p.speed_kmh ?? 0) < STOP_SPEED_THRESHOLD;
+    if (isSlow && runStart === null) runStart = i;
+    if (!isSlow && runStart !== null) closeRun(i - 1);
+  });
+  closeRun(points.length - 1);
+
+  return stops;
 }
 
 /**

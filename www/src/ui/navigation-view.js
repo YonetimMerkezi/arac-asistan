@@ -191,6 +191,18 @@ export function initNavigationView() {
   bindPoiButtons(container);
   bindMapClickForFavoriteSelection(container);
 
+  // Yakıt fiyatları artık kullanıcı "Yakıt" düğmesine dokunmadan, harita
+  // açılır açılmaz haritanın altında görünsün isteniyor. Önbellek
+  // (fuel-station-cache.js, uygulama açılışında zaten arka planda
+  // dolduruluyor) o an doluysa hemen gösterilir; henüz boşsa
+  // onFuelStationCacheUpdate dinleyicisi (aşağıda, activeCategory === 'fuel'
+  // kontrolüyle) ilk dolduğunda otomatik devreye girer.
+  activeCategory = 'fuel';
+  const initialFuelCache = getFuelStationCache();
+  if (initialFuelCache.stations.length > 0 || initialFuelCache.prices.length > 0) {
+    renderFuelPanel({ map, container, results: initialFuelCache.stations, prices: initialFuelCache.prices, location: initialFuelCache.location });
+  }
+
   const gpsDetailContainer = container.querySelector('[data-gps-detail]');
   if (gpsDetailContainer) mountGpsDetailCard(gpsDetailContainer);
 

@@ -14,6 +14,7 @@ import { getFuelStationCache, onFuelStationCacheUpdate, forceRefreshFuelStationC
 import { registerRefreshHandler } from '../core/refresh-registry.js';
 import { consumePendingFuelSelection } from '../core/pending-fuel-selection.js';
 import { openFuelRegionPicker } from './fuel-region-view.js';
+import { brandBadgeMarkup } from './components/brand-badge.js';
 import { logWarn } from '../core/logger.js';
 
 /** @type {{value: string, label: string}[]} Bakım kalemi türleri (spesifikasyondaki liste). */
@@ -56,6 +57,7 @@ export function initFuelView() {
       <input name="liters" type="number" step="0.01" placeholder="Litre" required style="padding:8px;">
       <input name="amount" type="number" step="0.01" placeholder="Tutar (₺)" required style="padding:8px;">
       <input name="odometer" type="number" step="1" placeholder="Kilometre (opsiyonel)" style="padding:8px;">
+      <p data-last-odometer-hint class="sda-card__label" style="margin:0;"></p>
       <button type="submit" class="sda-nav-btn" style="background:var(--sda-accent-soft);">Kaydet</button>
     </form>
     <canvas data-fuel-chart height="140" style="margin-bottom:16px;"></canvas>
@@ -209,6 +211,14 @@ function populateStationSelect(container) {
  */
 function bindFuelForm(container) {
   const form = container.querySelector('[data-fuel-form]');
+
+  const hintEl = container.querySelector('[data-last-odometer-hint]');
+  if (hintEl) {
+    getEstimatedOdometerKm().then((km) => {
+      hintEl.textContent = km != null ? `Son bilinen (tahmini) km: ${Math.round(km).toLocaleString('tr-TR')} km` : '';
+    });
+  }
+
   form?.addEventListener('submit', async (event) => {
     event.preventDefault();
     const data = new FormData(form);
@@ -252,16 +262,34 @@ function renderFuelPriceList(container) {
 
   const baslik = location ? `<p class="sda-card__label" style="margin-bottom:8px;">${location.il} / ${location.ilce}</p>` : '';
 
-  listEl.innerHTML = baslik + prices.map((p) => `
-    <div class="sda-card" style="margin-bottom:8px; display:flex; justify-content:space-between; align-items:center; gap:8px;">
-      <span class="sda-card__label" style="font-size:0.95rem;">${p.dagitici}</span>
-      <span class="sda-card__value" style="font-size:0.9rem; text-align:right;">
-        ${p.benzin != null ? `Benzin ${p.benzin.toFixed(2)}₺` : ''}
-        ${p.motorin != null ? ` · Motorin ${p.motorin.toFixed(2)}₺` : ''}
-        ${p.lpg != null ? ` · LPG ${p.lpg.toFixed(2)}₺` : ''}
-      </span>
-    </div>
+  const satirlar = prices.map((p) => `
+    <tr>
+      <td style="padding:8px 6px; display:flex; align-items:center; gap:8px; white-space:nowrap;">
+        ${brandBadgeMarkup(p.dagitici, { size: 26 })}
+        <span style="font-size:0.9rem;">${p.dagitici}</span>
+      </td>
+      <td style="padding:8px 6px; text-align:right; font-variant-numeric:tabular-nums;">${p.benzin != null ? p.benzin.toFixed(2) + ' ₺' : '—'}</td>
+      <td style="padding:8px 6px; text-align:right; font-variant-numeric:tabular-nums;">${p.motorin != null ? p.motorin.toFixed(2) + ' ₺' : '—'}</td>
+      <td style="padding:8px 6px; text-align:right; font-variant-numeric:tabular-nums;">${p.lpg != null ? p.lpg.toFixed(2) + ' ₺' : '—'}</td>
+    </tr>
   `).join('');
+
+  listEl.innerHTML = `
+    ${baslik}
+    <div class="sda-card" style="padding:0; overflow-x:auto;">
+      <table style="width:100%; border-collapse:collapse; font-size:0.85rem;">
+        <thead>
+          <tr style="border-bottom:1px solid var(--sda-border, #e2e2e2);">
+            <th style="padding:8px 6px; text-align:left; font-weight:600; color:var(--sda-text-muted);">Firma</th>
+            <th style="padding:8px 6px; text-align:right; font-weight:600; color:var(--sda-text-muted);">Benzin</th>
+            <th style="padding:8px 6px; text-align:right; font-weight:600; color:var(--sda-text-muted);">Motorin</th>
+            <th style="padding:8px 6px; text-align:right; font-weight:600; color:var(--sda-text-muted);">LPG</th>
+          </tr>
+        </thead>
+        <tbody>${satirlar}</tbody>
+      </table>
+    </div>
+  `;
 }
 
 /**
