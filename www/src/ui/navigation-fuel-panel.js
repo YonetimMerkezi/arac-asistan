@@ -15,7 +15,7 @@
  */
 
 import L from 'leaflet';
-import { matchStationByName } from '../maps/fuel-price-service.js';
+import { matchStationByName, getProvinceFuelPrices } from '../maps/fuel-price-service.js';
 import { getFuelStationCache } from '../maps/fuel-station-cache.js';
 import { isFavoriteBrand, toggleFavoriteBrand } from '../core/favorite-brands-store.js';
 import { getAssignedBrand, assignBrand } from '../maps/station-brand-store.js';
@@ -67,7 +67,7 @@ export function renderFuelPanel({ map, container, results, prices, location }) {
     ? results.filter((poi) => sameBrand(resolveStationBrand(poi, prices), selectedBrandFilter))
     : results;
 
-  renderMarkersAndList({ map, filtered, prices, listEl, statusEl, onChange: rerender });
+  renderMarkersAndList({ map, filtered, prices, listEl, statusEl, location, onChange: rerender });
 
   // Bölgedeki TÜM dağıtıcıların fiyatı - haritadaki yakın istasyonlarla
   // eşleştirmeye ÇALIŞMADAN, bağımsız bir "tüm firmalar" tablosu. OSM'deki
@@ -153,9 +153,10 @@ function renderBrandFilterTabs(filterEl, prices, onChange) {
  * @param {import('../maps/fuel-price-service.js').FuelStationPrice[]} args.prices
  * @param {HTMLElement|null} args.listEl
  * @param {HTMLElement|null} args.statusEl
+ * @param {{il: string, ilce: string}|null} args.location
  * @param {() => void} args.onChange - Marka ataması değişince listeyi yeniden çizmek için.
  */
-function renderMarkersAndList({ map, filtered, prices, listEl, statusEl, onChange }) {
+function renderMarkersAndList({ map, filtered, prices, listEl, statusEl, location, onChange }) {
   fuelMarkers.forEach((m) => map.removeLayer(m));
 
   fuelMarkers = filtered.slice(0, 15).map((poi) => {
@@ -163,7 +164,7 @@ function renderMarkersAndList({ map, filtered, prices, listEl, statusEl, onChang
     const marker = L.marker([poi.lat, poi.lon], {
       icon: L.divIcon({ className: 'sda-brand-marker', html: brandMarkerMarkup(brand), iconSize: [30, 30], iconAnchor: [15, 30] }),
     }).addTo(map);
-    marker.on('click', () => openStationModal({ poi, prices, onSaved: onChange }));
+    marker.on('click', () => openStationModal({ poi, prices, location, onSaved: onChange }));
     return marker;
   });
 
@@ -195,7 +196,7 @@ function renderMarkersAndList({ map, filtered, prices, listEl, statusEl, onChang
           const poi = filtered[index];
           if (!poi) return;
           map.setView([poi.lat, poi.lon], 16);
-          openStationModal({ poi, prices, onSaved: onChange });
+          openStationModal({ poi, prices, location, onSaved: onChange });
         });
       });
     }
@@ -221,25 +222,28 @@ function renderMarkersAndList({ map, filtered, prices, listEl, statusEl, onChang
  * @param {Object} args
  * @param {import('../maps/poi-search.js').PoiResult} args.poi
  * @param {import('../maps/fuel-price-service.js').FuelStationPrice[]} args.prices
+ * @param {{il: string, ilce: string}|null} args.location
  * @param {() => void} args.onSaved - Marka kaydedildikten sonra haritayı/listeyi yeniden çizmek için.
  */
-function openStationModal({ poi, prices, onSaved }) {
+function openStationModal({ poi, prices, location, onSaved }) {
   // DÜZELTME: `prices` parametresi, bu modalı açan işaretçi HANGİ ANDA
   // oluşturulduysa o andaki fiyat listesinin bir kopyasıdır (closure) -
-  // önbellek daha sonra tazelenmiş olsa bile (ör. Opet'in fiyatı biraz geç
-  // gelmişse) bu eski kopya değişmez. Marka atama listesi bu yüzden
+  // önbellek daha sonra tazelenmiş olsa bile (ör. bir markanın fiyatı biraz
+  // geç gelmişse) bu eski kopya değişmez. Marka atama listesi bu yüzden
   // bazen "Bölgedeki Yakıt Fiyatları" tablosunda (her zaman ANLIK önbellekten
   // okur) görünen bir markayı içermeyebiliyordu. Çözüm: pencere açılırken
   // önbellekten TAZE bir okuma yap, doluysa onu kullan.
   const freshCache = getFuelStationCache();
-  const currentPrices = freshCache.prices.length > 0 ? freshCache.prices : prices;
+  // Bu diziyi (ilçe-bazlı liste + varsa il geneli genişletmesi) SONRADAN
+  // güncelleyebilmek için `let` - province verisi asenkron gelince buraya eklenir.
+  let currentPrices = freshCache.prices.length > 0 ? freshCache.prices : prices;
 
   const currentBrand = resolveStationBrand(poi, currentPrices);
-  const brandOptions = [...new Set(currentPrices.map((p) => p.dagitici))].sort((a, b) => a.localeCompare(b, 'tr'));
+  const brandOptionsFrom = (list) => [...new Set(list.map((p) => p.dagitici))].sort((a, b) => a.localeCompare(b, 'tr'));
 
   const bodyHtml = `
     <div style="display:flex; align-items:center; gap:10px; margin-bottom:var(--sda-space-4);">
-      ${brandBadgeMarkup(currentBrand, { size: 44 })}
+      <span data-station-badge>${brandBadgeMarkup(currentBrand, { size: 44 })}</span>
       <div>
         <p class="sda-card__value" style="font-size:1rem; margin:0;">${poi.name}</p>
         <p class="sda-card__label" style="margin:2px 0 0 0;">${poi.distanceKm.toFixed(1)} km uzaklıkta</p>
@@ -247,13 +251,14 @@ function openStationModal({ poi, prices, onSaved }) {
     </div>
 
     <p class="sda-card__label" style="margin-bottom:6px;">Marka Ata</p>
-    <div style="display:flex; gap:8px; margin-bottom:var(--sda-space-4);">
+    <div style="display:flex; gap:8px; margin-bottom:4px;">
       <select data-brand-select class="sda-select" style="flex:1;">
         <option value="">Marka seç...</option>
-        ${brandOptions.map((b) => `<option value="${b}" ${sameBrand(b, currentBrand) ? 'selected' : ''}>${b}</option>`).join('')}
+        ${brandOptionsFrom(currentPrices).map((b) => `<option value="${b}" ${sameBrand(b, currentBrand) ? 'selected' : ''}>${b}</option>`).join('')}
       </select>
       <button type="button" data-save-brand class="sda-btn sda-btn--primary">Kaydet</button>
     </div>
+    <p data-save-feedback class="sda-card__label" style="margin:0 0 var(--sda-space-4) 0; min-height:1em;"></p>
 
     <p class="sda-card__label" style="margin-bottom:6px;">Güncel Fiyat Tablosu</p>
     <div data-modal-price-list></div>
@@ -266,11 +271,54 @@ function openStationModal({ poi, prices, onSaved }) {
   openModal({ title: 'Akaryakıt İstasyonu', bodyHtml, onMount: (body) => {
     renderModalPriceList(body.querySelector('[data-modal-price-list]'), currentPrices, currentBrand);
 
+    // İlçenin fiyat listesinde olmayan bir marka, ilin BAŞKA bir ilçesinde
+    // raporlanıyor olabilir (ör. bir ilçede Opet yoksa ama ilin genelinde
+    // varsa). Modal açılışını YAVAŞLATMAMAK için bu genişletme arka planda
+    // yapılır; yeni marka bulunursa seçim listesine ve fiyat tablosuna
+    // sessizce eklenir.
+    if (location?.il) {
+      getProvinceFuelPrices(location.il).then((province) => {
+        const bilinenler = new Set(currentPrices.map((p) => p.dagitici));
+        const yeniler = province.filter((p) => !bilinenler.has(p.dagitici));
+        if (yeniler.length === 0) return;
+
+        currentPrices = [...currentPrices, ...yeniler];
+
+        const select = body.querySelector('[data-brand-select]');
+        if (select) {
+          for (const y of yeniler) {
+            const opt = document.createElement('option');
+            opt.value = y.dagitici;
+            opt.textContent = `${y.dagitici} (il geneli)`;
+            select.appendChild(opt);
+          }
+        }
+        renderModalPriceList(body.querySelector('[data-modal-price-list]'), currentPrices, currentBrand);
+      }).catch(() => {}); // Yedek JSON'a da ulaşılamıyorsa sessizce vazgeç - ilçe listesi zaten gösteriliyor.
+    }
+
     body.querySelector('[data-save-brand]')?.addEventListener('click', async () => {
       const select = body.querySelector('[data-brand-select]');
       const chosen = select?.value || null;
       if (!chosen || poi.id === null || poi.id === undefined) return;
+
       await assignBrand(poi.id, chosen);
+
+      // DÜZELTME: onSaved() yalnızca ARKA PLANDAKİ haritayı/listeyi
+      // yeniliyordu - bu modal kapanıp yeniden açılmadığı için üstteki
+      // rozet ("?") kaydettikten sonra da eskisi gibi kalıyor, kaydetmemiş
+      // gibi bir izlenim veriyordu. Şimdi modalın kendi rozeti/fiyat
+      // tablosu da YERİNDE güncelleniyor.
+      const badgeContainer = body.querySelector('[data-station-badge]');
+      if (badgeContainer) badgeContainer.innerHTML = brandBadgeMarkup(chosen, { size: 44 });
+      renderModalPriceList(body.querySelector('[data-modal-price-list]'), currentPrices, chosen);
+
+      const feedback = body.querySelector('[data-save-feedback]');
+      if (feedback) {
+        feedback.textContent = `✓ "${chosen}" olarak kaydedildi.`;
+        feedback.style.color = 'var(--sda-success, #2a9d5c)';
+      }
+
       onSaved();
     });
 
