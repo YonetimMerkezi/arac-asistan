@@ -199,26 +199,37 @@ async function refresh(lat, lon) {
   refreshInProgress = true;
 
   try {
-    // ÖNCE konumun il/ilçesini çöz - bölge arşivinde bu yer daha önce
-    // ziyaret edilmişse, tam POI/fiyat taraması bitmeden ARŞİVDEKİ sonucu
-    // anında gösterebilmek için (kullanıcı beklemesin diye).
-    const location = await reverseGeocodeIlIlce(lat, lon);
+    // ÖNEMLİ: konum çözümlemesi (reverse-geocode) ile istasyon araması
+    // (Overpass POI) birbirinden BAĞIMSIZ ve PARALEL çalışmalı. Reverse-
+    // geocode servisi yavaş/erişilemez olsa bile istasyon araması ASLA
+    // beklemeden hemen başlamalı - önceki sürümde reverse-geocode İSTASYON
+    // ARAMASINDAN ÖNCE await ediliyordu, bu da geocode yavaş/tıkanık
+    // olduğunda haritanın hiç istasyon bulamamış gibi görünmesine yol
+    // açıyordu.
+    const geocodePromise = reverseGeocodeIlIlce(lat, lon).catch((error) => {
+      logWarn('fuel-station-cache', 'Konum çözümlenemedi (il/ilçe)', error);
+      return null;
+    });
 
-    if (location) {
-      const key = regionKey(location);
-      const arsivKaydi = visitedRegions[key];
+    // Bölge arşivi kontrolü: konum çözülür çözülmez (istasyon aramasını
+    // beklemeden) bu bölge daha önce ziyaret edildiyse arşivdeki sonuç
+    // anında gösterilir.
+    void geocodePromise.then((erkenLocation) => {
+      if (!erkenLocation) return;
+      const arsivKaydi = visitedRegions[regionKey(erkenLocation)];
       if (arsivKaydi) {
         cache = { ...arsivKaydi, fetchedForPosition: { lat, lon } };
-        logInfo('fuel-station-cache', `Arşivden anında gösterildi: ${location.il}/${location.ilce}`);
+        logInfo('fuel-station-cache', `Arşivden anında gösterildi: ${erkenLocation.il}/${erkenLocation.ilce}`);
         for (const listener of listeners) listener(getFuelStationCache());
       }
-    }
+    });
 
     let stations = await findNearbyPoi('fuel', lat, lon, 7000);
     if (stations.length === 0) {
       stations = await findNearbyPoi('fuel', lat, lon, 20000);
     }
 
+    const location = await geocodePromise;
     const prices = location ? await getFuelPrices(location.il, location.ilce, lon) : [];
 
     cache = {
