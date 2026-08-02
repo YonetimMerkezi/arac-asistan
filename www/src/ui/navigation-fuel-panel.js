@@ -16,6 +16,7 @@
 
 import L from 'leaflet';
 import { matchStationByName } from '../maps/fuel-price-service.js';
+import { getFuelStationCache } from '../maps/fuel-station-cache.js';
 import { isFavoriteBrand, toggleFavoriteBrand } from '../core/favorite-brands-store.js';
 import { getAssignedBrand, assignBrand } from '../maps/station-brand-store.js';
 import { setPendingFuelSelection } from '../core/pending-fuel-selection.js';
@@ -223,8 +224,18 @@ function renderMarkersAndList({ map, filtered, prices, listEl, statusEl, onChang
  * @param {() => void} args.onSaved - Marka kaydedildikten sonra haritayı/listeyi yeniden çizmek için.
  */
 function openStationModal({ poi, prices, onSaved }) {
-  const currentBrand = resolveStationBrand(poi, prices);
-  const brandOptions = [...new Set(prices.map((p) => p.dagitici))].sort((a, b) => a.localeCompare(b, 'tr'));
+  // DÜZELTME: `prices` parametresi, bu modalı açan işaretçi HANGİ ANDA
+  // oluşturulduysa o andaki fiyat listesinin bir kopyasıdır (closure) -
+  // önbellek daha sonra tazelenmiş olsa bile (ör. Opet'in fiyatı biraz geç
+  // gelmişse) bu eski kopya değişmez. Marka atama listesi bu yüzden
+  // bazen "Bölgedeki Yakıt Fiyatları" tablosunda (her zaman ANLIK önbellekten
+  // okur) görünen bir markayı içermeyebiliyordu. Çözüm: pencere açılırken
+  // önbellekten TAZE bir okuma yap, doluysa onu kullan.
+  const freshCache = getFuelStationCache();
+  const currentPrices = freshCache.prices.length > 0 ? freshCache.prices : prices;
+
+  const currentBrand = resolveStationBrand(poi, currentPrices);
+  const brandOptions = [...new Set(currentPrices.map((p) => p.dagitici))].sort((a, b) => a.localeCompare(b, 'tr'));
 
   const bodyHtml = `
     <div style="display:flex; align-items:center; gap:10px; margin-bottom:var(--sda-space-4);">
@@ -253,7 +264,7 @@ function openStationModal({ poi, prices, onSaved }) {
   `;
 
   openModal({ title: 'Akaryakıt İstasyonu', bodyHtml, onMount: (body) => {
-    renderModalPriceList(body.querySelector('[data-modal-price-list]'), prices, currentBrand);
+    renderModalPriceList(body.querySelector('[data-modal-price-list]'), currentPrices, currentBrand);
 
     body.querySelector('[data-save-brand]')?.addEventListener('click', async () => {
       const select = body.querySelector('[data-brand-select]');
