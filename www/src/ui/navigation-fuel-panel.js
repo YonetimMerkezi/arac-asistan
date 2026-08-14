@@ -15,15 +15,18 @@
  */
 
 import L from 'leaflet';
-import { matchStationByName, getProvinceFuelPrices } from '../maps/fuel-price-service.js';
+import { matchStationByName, getProvinceFuelPrices, getLpgProvider } from '../maps/fuel-price-service.js';
 import { getFuelStationCache } from '../maps/fuel-station-cache.js';
 import { isFavoriteBrand, toggleFavoriteBrand } from '../core/favorite-brands-store.js';
-import { getAssignedBrand, assignBrand } from '../maps/station-brand-store.js';
+import { getAssignedBrand, assignBrand, assignLpgProvider } from '../maps/station-brand-store.js';
 import { setPendingFuelSelection } from '../core/pending-fuel-selection.js';
 import { navigateTo } from '../core/view-router.js';
 import { brandBadgeMarkup, brandMarkerMarkup, brandColor } from './components/brand-badge.js';
 import { openModal } from './components/modal.js';
 import { iconMarkup } from './icons.js';
+
+/** @type {string[]} "LPG Sağlayıcı" açılır menüsünde sunulan yaygın seçenekler - liste dışı bir sağlayıcı için "Diğer..." seçilip elle yazılabilir. */
+const KNOWN_LPG_PROVIDERS = ['Aygaz', 'Milangaz', 'İpragaz', 'Balpet', 'Lipetgaz', 'Turkuaz Gaz'];
 
 /** @type {import('leaflet').Marker[]} Yalnızca bu panelin çizdiği işaretçiler (navigation-view.js'in genel POI işaretçilerinden ayrı). */
 let fuelMarkers = [];
@@ -89,6 +92,25 @@ function sameBrand(a, b) {
 }
 
 /**
+ * "LPG Sağlayıcı" açılır menüsünün <option> listesini üretir - bilinen
+ * sağlayıcılar + "Diğer..." (listede olmayan bir sağlayıcı için elle giriş).
+ * Firmanın hâlihazırda bilinen/kayıtlı bir sağlayıcısı varsa (kullanıcı
+ * ataması veya varsayılan tablo) o seçili gelir; listede yoksa "Diğer..."
+ * seçili gelir ve gerçek değer metin kutusuna yazılır (bkz. lpgSelectChangeHandler).
+ * @param {string|null} brand
+ * @returns {string}
+ */
+function lpgProviderOptionsHtml(brand) {
+  const current = brand ? getLpgProvider(brand) : null;
+  const inKnownList = current && KNOWN_LPG_PROVIDERS.some((p) => p.toLocaleLowerCase('tr') === current.toLocaleLowerCase('tr'));
+  const options = KNOWN_LPG_PROVIDERS
+    .map((p) => `<option value="${p}" ${inKnownList && p.toLocaleLowerCase('tr') === current.toLocaleLowerCase('tr') ? 'selected' : ''}>${p}</option>`)
+    .join('');
+  const otherSelected = current && !inKnownList;
+  return `${options}<option value="__custom__" ${otherSelected ? 'selected' : ''}>Diğer...</option>`;
+}
+
+/**
  * Bir istasyon için gösterilecek markayı belirler - sırasıyla: kullanıcının
  * elle atadığı marka (station-brand-store) > OSM'in kendi "brand" etiketi >
  * istasyon adında geçen markayla fiyat listesi eşleşmesi (ör. adı "Opet
@@ -102,6 +124,20 @@ function resolveStationBrand(poi, prices) {
   if (manual) return manual;
   if (poi.brand) return poi.brand;
   return matchStationByName(prices, poi.name)?.dagitici ?? null;
+}
+
+/**
+ * Bölge fiyat tablosundaki LPG kutusunun altında gösterilen küçük sağlayıcı
+ * rozetinin markup'ını üretir - firmanın LPG sağlayıcısı bilinmiyorsa (ne
+ * kullanıcı ataması ne varsayılan tabloda kayıt varsa) boş döner (rozet
+ * gösterilmez, kutu sade kalır).
+ * @param {string|null} dagitici
+ * @returns {string}
+ */
+function lpgProviderBadgeMarkup(dagitici) {
+  const provider = getLpgProvider(dagitici);
+  if (!provider) return '';
+  return `<span class="sda-card__label" style="display:block; font-size:0.72rem; opacity:0.8; margin-top:2px;">${provider}</span>`;
 }
 
 /**
@@ -260,6 +296,18 @@ function openStationModal({ poi, prices, location, onSaved }) {
     </div>
     <p data-save-feedback class="sda-card__label" style="margin:0 0 var(--sda-space-4) 0; min-height:1em;"></p>
 
+    <p class="sda-card__label" style="margin-bottom:6px;">LPG Sağlayıcı ${currentBrand ? `(${currentBrand})` : ''}</p>
+    <div style="display:flex; gap:8px; margin-bottom:4px;">
+      <select data-lpg-provider-select class="sda-select" style="flex:1;">
+        <option value="">Sağlayıcı seç...</option>
+        ${lpgProviderOptionsHtml(currentBrand)}
+      </select>
+      <button type="button" data-save-lpg-provider class="sda-btn sda-btn--primary">Kaydet</button>
+    </div>
+    <input type="text" data-lpg-provider-custom class="sda-select" placeholder="Sağlayıcı adı yaz..."
+      style="display:none; width:100%; margin-bottom:4px;" />
+    <p data-lpg-save-feedback class="sda-card__label" style="margin:0 0 var(--sda-space-4) 0; min-height:1em;"></p>
+
     <p class="sda-card__label" style="margin-bottom:6px;">Güncel Fiyat Tablosu</p>
     <div data-modal-price-list></div>
 
@@ -270,6 +318,7 @@ function openStationModal({ poi, prices, location, onSaved }) {
 
   openModal({ title: 'Akaryakıt İstasyonu', bodyHtml, onMount: (body) => {
     renderModalPriceList(body.querySelector('[data-modal-price-list]'), currentPrices, currentBrand);
+    setupLpgProviderSection(body, currentBrand);
 
     // İlçenin fiyat listesinde olmayan bir marka, ilin BAŞKA bir ilçesinde
     // raporlanıyor olabilir (ör. bir ilçede Opet yoksa ama ilin genelinde
@@ -296,6 +345,10 @@ function openStationModal({ poi, prices, location, onSaved }) {
         renderModalPriceList(body.querySelector('[data-modal-price-list]'), currentPrices, currentBrand);
       }).catch(() => {}); // Yedek JSON'a da ulaşılamıyorsa sessizce vazgeç - ilçe listesi zaten gösteriliyor.
     }
+
+    body.querySelector('[data-brand-select]')?.addEventListener('change', (event) => {
+      setupLpgProviderSection(body, event.target.value || null);
+    });
 
     body.querySelector('[data-save-brand]')?.addEventListener('click', async () => {
       const select = body.querySelector('[data-brand-select]');
@@ -328,6 +381,53 @@ function openStationModal({ poi, prices, location, onSaved }) {
       if (brand) startRefuel(brand);
     });
   } });
+}
+
+/**
+ * Modal içindeki "LPG Sağlayıcı" bölümünü verilen marka için kurar/yeniler:
+ * başlığı, açılır menüyü ve (sağlayıcı listede yoksa) elle giriş kutusunu
+ * günceller, ve menü/Kaydet düğmesine olay dinleyicilerini bağlar.
+ * "Marka Ata" seçimi değiştikçe (bkz. data-brand-select 'change') YENİDEN
+ * çağrılır - çünkü LPG sağlayıcısı istasyona değil, FİRMAYA bağlıdır.
+ * @param {HTMLElement} body - Modal gövdesi.
+ * @param {string|null} brand - O anda seçili/çözülen dağıtıcı adı.
+ */
+function setupLpgProviderSection(body, brand) {
+  const label = body.querySelector('[data-lpg-provider-select]')?.closest('div')?.previousElementSibling;
+  if (label) label.textContent = `LPG Sağlayıcı ${brand ? `(${brand})` : ''}`;
+
+  const select = body.querySelector('[data-lpg-provider-select]');
+  const customInput = body.querySelector('[data-lpg-provider-custom]');
+  const feedback = body.querySelector('[data-lpg-save-feedback]');
+  if (!select || !customInput) return;
+
+  select.innerHTML = `<option value="">Sağlayıcı seç...</option>${lpgProviderOptionsHtml(brand)}`;
+  if (feedback) feedback.textContent = '';
+
+  const current = brand ? getLpgProvider(brand) : null;
+  const isCustom = select.value === '__custom__';
+  customInput.style.display = isCustom ? 'block' : 'none';
+  customInput.value = isCustom && current ? current : '';
+
+  select.onchange = () => {
+    customInput.style.display = select.value === '__custom__' ? 'block' : 'none';
+  };
+
+  const saveBtn = body.querySelector('[data-save-lpg-provider]');
+  if (saveBtn) {
+    saveBtn.onclick = async () => {
+      if (!brand) return;
+      const chosen = select.value === '__custom__' ? customInput.value.trim() : select.value;
+      if (!chosen) return;
+
+      await assignLpgProvider(brand, chosen);
+
+      if (feedback) {
+        feedback.textContent = `✓ "${brand}" için LPG sağlayıcısı "${chosen}" olarak kaydedildi.`;
+        feedback.style.color = 'var(--sda-success, #2a9d5c)';
+      }
+    };
+  }
 }
 
 /**
@@ -399,7 +499,10 @@ export function renderRegionPriceTable(priceTableEl, stations, location) {
         <div style="display:flex; gap:8px;">
           <div class="sda-fuel-box"><span class="sda-fuel-box__label">Benzin</span><span class="sda-fuel-box__value">${s.benzin ?? '-'} ₺</span></div>
           <div class="sda-fuel-box"><span class="sda-fuel-box__label">Motorin</span><span class="sda-fuel-box__value">${s.motorin ?? '-'} ₺</span></div>
-          <div class="sda-fuel-box"><span class="sda-fuel-box__label">LPG</span><span class="sda-fuel-box__value">${s.lpg ?? '-'} ₺</span></div>
+          <div class="sda-fuel-box">
+            <span class="sda-fuel-box__label">LPG</span><span class="sda-fuel-box__value">${s.lpg ?? '-'} ₺</span>
+            ${lpgProviderBadgeMarkup(s.dagitici)}
+          </div>
         </div>
       </div>
     `).join('')}
