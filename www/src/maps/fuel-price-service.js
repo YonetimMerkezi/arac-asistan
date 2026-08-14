@@ -15,6 +15,7 @@
 
 import { Preferences } from '@capacitor/preferences';
 import { logWarn } from '../core/logger.js';
+import { getAssignedLpgProvider } from './station-brand-store.js';
 
 /** @type {string} Varsayılan Worker adresi (Sedat'ın "Okul AI Asistan" worker'ı). */
 const DEFAULT_WORKER_ENDPOINT = 'https://okul-ai-asistan.sedonet23.workers.dev/';
@@ -244,6 +245,48 @@ export async function getFuelPrices(il, ilce, currentLon) {
 const BRAND_ALIASES = {
   bp: 'petrol ofisi',
 };
+
+/**
+ * @type {Record<string, string>} Bilinen akaryakıt firmalarının LPG'yi HANGİ
+ * sağlayıcıdan aldığı - istasyondaki tabela markayla (dağıtıcı) pompadan
+ * çıkan LPG'nin markası FARKLI olabiliyor (ör. Total istasyonunda Milangaz
+ * LPG satılıyor). Anahtar, dağıtıcı adının küçük harfe çevrilmiş, boşluksuz
+ * hâlidir (brand-catalog.js'teki normalizeBrandKey ile AYNI kural - iki
+ * dosya arasında marka anahtarı tutarlı kalsın diye).
+ *
+ * NOT: Bu tablo sadece KESİN bilinen eşlemeleri içerir. Emin olunmayan bir
+ * firma için buraya tahmini bir sağlayıcı EKLENMEMELİDİR - yanlış bilgi,
+ * doğru bilgi olmamasından daha kötüdür. Bilinmeyen firmalar için
+ * getLpgProvider() null döner ve arayüzde "sağlayıcı bilgisi yok" gösterilir;
+ * kullanıcı isterse navigation-fuel-panel.js'teki "LPG Sağlayıcı" alanından
+ * elle girip station-brand-store.js'te kalıcı olarak saklayabilir.
+ */
+const DEFAULT_LPG_PROVIDERS = {
+  total: 'Milangaz',
+  opet: 'Aygaz',
+};
+
+/**
+ * Bir akaryakıt firması (dağıtıcı) için LPG sağlayıcısını döndürür.
+ * Önce kullanıcının station-brand-store.js'te elle girdiği özelleştirmeye
+ * bakar, yoksa yukarıdaki varsayılan tabloya (KESİN bilinen firmalar için)
+ * düşer. İkisi de yoksa null döner.
+ * @param {string|null|undefined} dagitici - Dağıtıcı/marka adı.
+ * @returns {string|null}
+ */
+export function getLpgProvider(dagitici) {
+  if (!dagitici) return null;
+
+  const manual = getAssignedLpgProvider(dagitici);
+  if (manual) return manual;
+
+  const key = dagitici.toLocaleLowerCase('tr').replace(/i̇/g, 'i').replace(/[^a-z0-9]/g, '');
+  const exact = DEFAULT_LPG_PROVIDERS[key];
+  if (exact) return exact;
+
+  const partial = Object.keys(DEFAULT_LPG_PROVIDERS).find((k) => key.includes(k) || k.includes(key));
+  return partial ? DEFAULT_LPG_PROVIDERS[partial] : null;
+}
 
 /**
  * Bir istasyon/marka adına (OSM POI adı veya kullanıcı girdisi) en yakın
