@@ -200,7 +200,7 @@ export function initNavigationView() {
   activeCategory = 'fuel';
   const initialFuelCache = getFuelStationCache();
   if (initialFuelCache.stations.length > 0 || initialFuelCache.prices.length > 0) {
-    renderFuelPanel({ map, container, results: initialFuelCache.stations, prices: initialFuelCache.prices, location: initialFuelCache.location });
+    renderFuelPanel({ map, container, results: initialFuelCache.stations, prices: initialFuelCache.prices, location: initialFuelCache.location, fetchedAt: initialFuelCache.fetchedAt });
   }
 
   const gpsDetailContainer = container.querySelector('[data-gps-detail]');
@@ -394,7 +394,7 @@ function bindPoiButtons(container) {
       if (category === 'fuel') {
         const cached = getFuelStationCache();
         if (cached.stations.length > 0) {
-          renderFuelPanel({ map, container, results: cached.stations, prices: cached.prices, location: cached.location });
+          renderFuelPanel({ map, container, results: cached.stations, prices: cached.prices, location: cached.location, fetchedAt: cached.fetchedAt });
           const ageMinutes = Math.round((Date.now() - cached.fetchedAt) / 60000);
           const ageText = ageMinutes > 0 ? `${ageMinutes} dk önce güncellendi` : 'az önce güncellendi';
           const priceNote = cached.prices.length > 0 ? '' : ' · fiyat verisi henüz gelmedi, birazdan otomatik tekrar denenecek';
@@ -420,7 +420,7 @@ function bindPoiButtons(container) {
       if (category === 'fuel') {
         const location = await reverseGeocodeIlIlce(current.latitude, current.longitude);
         const prices = location ? await getFuelPrices(location.il, location.ilce, current.longitude) : [];
-        renderFuelPanel({ map, container, results, prices, location });
+        renderFuelPanel({ map, container, results, prices, location, fetchedAt: Date.now() });
       } else {
         renderPoiMarkersAndList(results, listEl, statusEl, category);
       }
@@ -431,7 +431,7 @@ function bindPoiButtons(container) {
   // kullanıcı o an Yakıt sonuçlarını görüyorsa listeyi/fiyatları sessizce güncelle.
   onFuelStationCacheUpdate((cached) => {
     if (activeCategory !== 'fuel') return; // Yakıt sonuçları açık değilse dokunma.
-    renderFuelPanel({ map, container, results: cached.stations, prices: cached.prices, location: cached.location });
+    renderFuelPanel({ map, container, results: cached.stations, prices: cached.prices, location: cached.location, fetchedAt: cached.fetchedAt });
   });
 }
 

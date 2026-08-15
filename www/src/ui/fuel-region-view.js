@@ -68,17 +68,28 @@ export function openFuelRegionPicker() {
       showButton.textContent = 'Yükleniyor...';
       priceTableEl.innerHTML = '';
 
-      const stations = await getFuelPrices(il, ilce);
-      const withPrices = stations.filter((s) => s.benzin !== null);
+      await gosterVeyaTazele(false);
 
       showButton.disabled = false;
       showButton.textContent = 'Fiyatları Göster';
 
-      if (withPrices.length === 0) {
-        priceTableEl.innerHTML = '<p class="sda-card__label">Bu bölge için fiyat verisi bulunamadı.</p>';
-        return;
+      /**
+       * Seçilen il/ilçe için fiyatları çeker ve tabloyu çizer - GPS'e değil,
+       * kullanıcının BURADA seçtiği bölgeye bağlıdır. "Güncelle" düğmesi
+       * (renderRegionPriceTable içindeki onRefresh) forceRefresh=true ile
+       * bunu tekrar çağırır (10 dakikalık dahili önbelleği yoksayarak).
+       * @param {boolean} forceRefresh
+       */
+      async function gosterVeyaTazele(forceRefresh) {
+        const stations = await getFuelPrices(il, ilce, undefined, forceRefresh);
+        const withPrices = stations.filter((s) => s.benzin !== null);
+
+        if (withPrices.length === 0) {
+          priceTableEl.innerHTML = '<p class="sda-card__label">Bu bölge için fiyat verisi bulunamadı.</p>';
+          return;
+        }
+        renderRegionPriceTable(priceTableEl, withPrices, { il, ilce }, stations, Date.now(), () => gosterVeyaTazele(true));
       }
-      renderRegionPriceTable(priceTableEl, withPrices, { il, ilce });
     });
   } });
 }

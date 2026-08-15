@@ -15,8 +15,8 @@
  */
 
 import L from 'leaflet';
-import { matchStationByName, getProvinceFuelPrices, getLpgProvider } from '../maps/fuel-price-service.js';
-import { getFuelStationCache } from '../maps/fuel-station-cache.js';
+import { matchStationByName, getProvinceFuelPrices, getLpgProvider, resolveLpgPrice } from '../maps/fuel-price-service.js';
+import { getFuelStationCache, forceRefreshFuelStationCache } from '../maps/fuel-station-cache.js';
 import { isFavoriteBrand, toggleFavoriteBrand } from '../core/favorite-brands-store.js';
 import { getAssignedBrand, assignBrand, assignLpgProvider } from '../maps/station-brand-store.js';
 import { setPendingFuelSelection } from '../core/pending-fuel-selection.js';
@@ -55,14 +55,16 @@ export function clearFuelPanel(map) {
  * @param {import('../maps/poi-search.js').PoiResult[]} args.results
  * @param {import('../maps/fuel-price-service.js').FuelStationPrice[]} args.prices
  * @param {{il: string, ilce: string}|null} args.location
+ * @param {number} [args.fetchedAt] - Bu verinin çekildiği an (Date.now()) - "X dk önce
+ *   güncellendi" metni ve elle yenileme düğmesi için kullanılır.
  */
-export function renderFuelPanel({ map, container, results, prices, location }) {
+export function renderFuelPanel({ map, container, results, prices, location, fetchedAt }) {
   const listEl = container.querySelector('[data-poi-list]');
   const priceTableEl = container.querySelector('[data-price-table]');
   const statusEl = container.querySelector('[data-status]');
   const filterEl = container.querySelector('[data-brand-filter]');
 
-  const rerender = () => renderFuelPanel({ map, container, results, prices, location });
+  const rerender = () => renderFuelPanel({ map, container, results, prices, location, fetchedAt });
 
   renderBrandFilterTabs(filterEl, prices, rerender);
 
@@ -76,9 +78,80 @@ export function renderFuelPanel({ map, container, results, prices, location }) {
   // eşleştirmeye ÇALIŞMADAN, bağımsız bir "tüm firmalar" tablosu. OSM'deki
   // marka etiketleri çoğu istasyonda eksik olduğu için bu, "en azından
   // bölgedeki tüm fiyatları güvenilir şekilde gör" ihtiyacını karşılar.
-  if (priceTableEl && location && prices.some((p) => p.benzin !== null)) {
-    renderRegionPriceTable(priceTableEl, prices.filter((p) => p.benzin !== null), location);
+  if (priceTableEl) {
+    if (location && prices.some((p) => p.benzin !== null)) {
+      // NOT: LPG "ödünç fiyat" çözümlemesi (bkz. resolveLpgPrice) saf LPG
+      // firmalarının (Aygaz, Milangaz vb.) satırlarına ihtiyaç duyar - o
+      // satırların benzin'i null olduğu için aşağıdaki filtre onları
+      // GÖSTERİM listesinden eler, ama çözümleme için tam `prices` listesi
+      // ayrıca (4. parametre) gönderilir.
+      renderRegionPriceTable(priceTableEl, prices.filter((p) => p.benzin !== null), location, prices, fetchedAt);
+    } else {
+      renderFuelPriceEmptyState(priceTableEl, fetchedAt);
+    }
   }
+}
+
+/**
+ * Fiyat verisi henüz gelmemişken (yeni/hiç ziyaret edilmemiş bölge, ya da
+ * geçici bir ağ aksaklığı) gösterilen sade durum: kısa açıklama + elle
+ * yenileme düğmesi - kullanıcı 15 dakikalık otomatik tazelemeyi beklemek
+ * zorunda kalmasın diye.
+ * @param {HTMLElement} priceTableEl
+ * @param {number} [fetchedAt]
+ */
+function renderFuelPriceEmptyState(priceTableEl, fetchedAt) {
+  priceTableEl.innerHTML = `
+    <div style="display:flex; align-items:center; justify-content:space-between; gap:8px; margin-bottom:8px;">
+      <p class="sda-card__label" style="margin:0;">Bu bölge için fiyat verisi henüz yok.${lastUpdatedSuffix(fetchedAt)}</p>
+      <button type="button" data-fuel-price-refresh class="sda-btn sda-btn--secondary" style="flex-shrink:0; padding:6px 10px; white-space:nowrap;">
+        ${iconMarkup('refresh', { size: 16 })} Güncelle
+      </button>
+    </div>
+  `;
+  bindFuelPriceRefreshButton(priceTableEl);
+}
+
+/**
+ * "X dk önce güncellendi" biçiminde küçük bir ek metin üretir (fetchedAt
+ * yoksa boş döner).
+ * @param {number} [fetchedAt]
+ * @returns {string}
+ */
+function lastUpdatedSuffix(fetchedAt) {
+  if (!fetchedAt) return '';
+  const ageMinutes = Math.round((Date.now() - fetchedAt) / 60000);
+  const ageText = ageMinutes > 0 ? `${ageMinutes} dk önce güncellendi` : 'az önce güncellendi';
+  return ` (${ageText})`;
+}
+
+/**
+ * Bir konteynerdeki `[data-fuel-price-refresh]` düğmesine tıklama
+ * dinleyicisi bağlar. Varsayılan davranış fuel-station-cache.js'in TAM
+ * (GPS konumuna göre istasyon + fiyat) tazelemesini tetikler - ana Yakıt
+ * panelinde bu doğrudur (panel zaten GPS konumuna bağlı). Ama elle il/ilçe
+ * seçilen ekranda (bkz. fuel-region-view.js) GPS'in DEĞİL, SEÇİLEN bölgenin
+ * tazelenmesi gerekir - bu yüzden çağıran taraf `onRefresh` ile kendi
+ * tazeleme mantığını verebilir.
+ * @param {HTMLElement} scopeEl
+ * @param {() => Promise<void>} [onRefresh]
+ */
+function bindFuelPriceRefreshButton(scopeEl, onRefresh) {
+  const btn = scopeEl.querySelector('[data-fuel-price-refresh]');
+  if (!btn) return;
+  btn.addEventListener('click', async () => {
+    btn.disabled = true;
+    btn.textContent = 'Yenileniyor...';
+    try {
+      await (onRefresh ? onRefresh() : forceRefreshFuelStationCache());
+    } finally {
+      // Yeniden çizim genelde bu düğmeyi zaten DOM'dan kaldırıp yerine
+      // yenisini koyar; ama tazeleme başarısız/gecikmeli olursa kullanıcı
+      // kilitli kalmasın diye burada da geri açıyoruz.
+      btn.disabled = false;
+      btn.innerHTML = `${iconMarkup('refresh', { size: 16 })} Güncelle`;
+    }
+  });
 }
 
 /**
@@ -128,16 +201,15 @@ function resolveStationBrand(poi, prices) {
 
 /**
  * Bölge fiyat tablosundaki LPG kutusunun altında gösterilen küçük sağlayıcı
- * rozetinin markup'ını üretir - firmanın LPG sağlayıcısı bilinmiyorsa (ne
- * kullanıcı ataması ne varsayılan tabloda kayıt varsa) boş döner (rozet
- * gösterilmez, kutu sade kalır).
- * @param {string|null} dagitici
+ * rozetinin markup'ını üretir - fiyat firmanın kendi satırından geliyorsa
+ * (viaProvider yok) hiçbir şey gösterilmez (zaten kendi fiyatı); bilinen bir
+ * sağlayıcıdan ÖDÜNÇ alınmışsa "(Sağlayıcı Adı)" notu eklenir.
+ * @param {{price: number|null, viaProvider: string|null}} lpgResolved
  * @returns {string}
  */
-function lpgProviderBadgeMarkup(dagitici) {
-  const provider = getLpgProvider(dagitici);
-  if (!provider) return '';
-  return `<span class="sda-card__label" style="display:block; font-size:0.72rem; opacity:0.8; margin-top:2px;">${provider}</span>`;
+function lpgProviderBadgeMarkup(lpgResolved) {
+  if (!lpgResolved.viaProvider) return '';
+  return `<span class="sda-card__label" style="display:block; font-size:0.72rem; opacity:0.8; margin-top:2px;">${lpgResolved.viaProvider} fiyatı</span>`;
 }
 
 /**
@@ -211,8 +283,10 @@ function renderMarkersAndList({ map, filtered, prices, listEl, statusEl, locatio
       listEl.innerHTML = filtered.slice(0, 15).map((poi, index) => {
         const brand = resolveStationBrand(poi, prices);
         const price = matchStationByName(prices, brand ?? poi.name);
+        const lpgResolved = price ? resolveLpgPrice(price.dagitici, price.lpg, prices) : { price: null, viaProvider: null };
+        const lpgText = lpgResolved.price ? ` · LPG ${lpgResolved.price} ₺${lpgResolved.viaProvider ? ` (${lpgResolved.viaProvider})` : ''}` : '';
         const priceLine = price
-          ? `Benzin ${price.benzin ?? '-'} ₺ · Motorin ${price.motorin ?? '-'} ₺${price.lpg ? ` · LPG ${price.lpg} ₺` : ''}`
+          ? `Benzin ${price.benzin ?? '-'} ₺ · Motorin ${price.motorin ?? '-'} ₺${lpgText}`
           : 'Fiyat bilgisi yok';
         return `
           <button type="button" data-fuel-row="${index}" class="sda-card" style="display:flex; align-items:center; gap:10px; width:100%; text-align:left; margin-bottom:6px; border:none;">
@@ -432,7 +506,8 @@ function setupLpgProviderSection(body, brand) {
 
 /**
  * Modal içindeki fiyat listesini çizer - seçili/çözülen marka en üstte ve
- * vurgulu, diğerleri altında.
+ * vurgulu, diğerleri altında. LPG, firmanın kendi satırında yoksa bilinen
+ * sağlayıcısından (bkz. resolveLpgPrice) ödünç gösterilir.
  * @param {HTMLElement|null} listEl
  * @param {import('../maps/fuel-price-service.js').FuelStationPrice[]} prices
  * @param {string|null} highlightBrand
@@ -445,14 +520,20 @@ function renderModalPriceList(listEl, prices, highlightBrand) {
     return aHi - bHi || (a.benzin ?? Infinity) - (b.benzin ?? Infinity);
   });
 
-  listEl.innerHTML = ordered.map((s) => `
+  listEl.innerHTML = ordered.map((s) => {
+    const lpgResolved = resolveLpgPrice(s.dagitici, s.lpg, prices);
+    const lpgText = lpgResolved.price
+      ? `${lpgResolved.price}${lpgResolved.viaProvider ? ` (${lpgResolved.viaProvider})` : ''}`
+      : '-';
+    return `
     <div class="sda-card" style="display:flex; align-items:center; gap:10px; margin-bottom:6px;
       ${sameBrand(s.dagitici, highlightBrand) ? 'border-color:' + brandColor(s.dagitici) + '; border-width:2px;' : ''}">
       ${brandBadgeMarkup(s.dagitici, { size: 30 })}
       <span class="sda-card__value" style="flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-size:0.9rem;">${s.dagitici}</span>
-      <span class="sda-card__label" style="text-align:right;">Benzin ${s.benzin ?? '-'} ₺<br>Motorin ${s.motorin ?? '-'} ₺<br>LPG ${s.lpg ?? '-'} ₺</span>
+      <span class="sda-card__label" style="text-align:right;">Benzin ${s.benzin ?? '-'} ₺<br>Motorin ${s.motorin ?? '-'} ₺<br>LPG ${lpgText} ₺</span>
     </div>
-  `).join('');
+  `;
+  }).join('');
 }
 
 /**
@@ -470,21 +551,33 @@ function startRefuel(brand) {
  * Konumun il/ilçesindeki TÜM dağıtıcıların güncel fiyatlarını renkli marka
  * rozetleri, kutulanmış Benzin/Motorin/LPG değerleri ve her satırda bir
  * "Yakıt Al" düğmesiyle gösterir. Favori markalar (varsa) en üstte, geri
- * kalanı fiyata göre (ucuzdan pahalıya) sıralanır.
+ * kalanı fiyata göre (ucuzdan pahalıya) sıralanır. Başlıkta ayrıca "X dk
+ * önce güncellendi" notu ve elle yenileme düğmesi bulunur.
  * @param {HTMLElement} priceTableEl
- * @param {import('../maps/fuel-price-service.js').FuelStationPrice[]} stations
+ * @param {import('../maps/fuel-price-service.js').FuelStationPrice[]} stations - Yalnızca benzin!=null olan, GÖSTERİLECEK satırlar.
  * @param {{il: string, ilce: string}} location
+ * @param {import('../maps/fuel-price-service.js').FuelStationPrice[]} allPrices - Bölgenin TAM (filtrelenmemiş) listesi - LPG "ödünç fiyat" çözümlemesi için gerekir.
+ * @param {number} [fetchedAt]
+ * @param {() => Promise<void>} [onRefresh] - "Güncelle" düğmesi için özel tazeleme mantığı (yoksa GPS konumuna göre varsayılan tazeleme kullanılır - bkz. bindFuelPriceRefreshButton).
  */
-export function renderRegionPriceTable(priceTableEl, stations, location) {
+export function renderRegionPriceTable(priceTableEl, stations, location, allPrices, fetchedAt, onRefresh) {
   const favorites = stations.filter((s) => isFavoriteBrand(s.dagitici))
     .sort((a, b) => a.dagitici.localeCompare(b.dagitici, 'tr'));
   const others = stations.filter((s) => !isFavoriteBrand(s.dagitici))
     .sort((a, b) => (a.benzin ?? Infinity) - (b.benzin ?? Infinity));
   const ordered = [...favorites, ...others];
+  const fullList = allPrices ?? stations;
 
   priceTableEl.innerHTML = `
-    <p class="sda-card__label">${location.il} / ${location.ilce} - Tüm Firmaların Yakıt Fiyatları</p>
-    ${ordered.map((s) => `
+    <div style="display:flex; align-items:center; justify-content:space-between; gap:8px; margin-bottom:4px;">
+      <p class="sda-card__label" style="margin:0;">${location.il} / ${location.ilce} - Tüm Firmaların Yakıt Fiyatları${lastUpdatedSuffix(fetchedAt)}</p>
+      <button type="button" data-fuel-price-refresh class="sda-btn sda-btn--secondary" style="flex-shrink:0; padding:6px 10px; white-space:nowrap;">
+        ${iconMarkup('refresh', { size: 16 })} Güncelle
+      </button>
+    </div>
+    ${ordered.map((s) => {
+      const lpgResolved = resolveLpgPrice(s.dagitici, s.lpg, fullList);
+      return `
       <div class="sda-card sda-card--elevated" style="margin-bottom:10px;">
         <div style="display:flex; align-items:center; gap:10px; margin-bottom:10px;">
           ${brandBadgeMarkup(s.dagitici, { size: 36 })}
@@ -500,18 +593,21 @@ export function renderRegionPriceTable(priceTableEl, stations, location) {
           <div class="sda-fuel-box"><span class="sda-fuel-box__label">Benzin</span><span class="sda-fuel-box__value">${s.benzin ?? '-'} ₺</span></div>
           <div class="sda-fuel-box"><span class="sda-fuel-box__label">Motorin</span><span class="sda-fuel-box__value">${s.motorin ?? '-'} ₺</span></div>
           <div class="sda-fuel-box">
-            <span class="sda-fuel-box__label">LPG</span><span class="sda-fuel-box__value">${s.lpg ?? '-'} ₺</span>
-            ${lpgProviderBadgeMarkup(s.dagitici)}
+            <span class="sda-fuel-box__label">LPG</span><span class="sda-fuel-box__value">${lpgResolved.price ?? '-'} ₺</span>
+            ${lpgProviderBadgeMarkup(lpgResolved)}
           </div>
         </div>
       </div>
-    `).join('')}
+    `;
+    }).join('')}
   `;
+
+  bindFuelPriceRefreshButton(priceTableEl, onRefresh);
 
   priceTableEl.querySelectorAll('[data-fav-brand]').forEach((starBtn) => {
     starBtn.addEventListener('click', async () => {
       await toggleFavoriteBrand(starBtn.getAttribute('data-fav-brand'));
-      renderRegionPriceTable(priceTableEl, stations, location); // favori değişti, yeniden sırala.
+      renderRegionPriceTable(priceTableEl, stations, location, allPrices, fetchedAt, onRefresh); // favori değişti, yeniden sırala.
     });
   });
 
