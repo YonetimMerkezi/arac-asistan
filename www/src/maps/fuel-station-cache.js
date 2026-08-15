@@ -183,29 +183,37 @@ export function onFuelStationCacheUpdate(callback) {
 /**
  * Önbelleği hemen (bekleme aralığını yoksayarak) tazelemeye zorlar - ör.
  * kullanıcı Harita ekranında elle "yenile" isterse kullanılabilir.
+ * forceRefresh=true, fuel-price-service.js'teki 10 dakikalık dahili önbelleği
+ * de yoksayar - "elle yenile" düğmesi TTL dolmamış olsa bile taze veri
+ * getirsin diye (bkz. navigation-fuel-panel.js "Fiyatları Güncelle" düğmesi).
  * @returns {Promise<void>}
  */
 export async function forceRefreshFuelStationCache() {
   const current = getLastPosition();
-  if (current) await refresh(current.latitude, current.longitude);
+  if (current) await refresh(current.latitude, current.longitude, true);
 }
 
 /**
  * @param {number} lat
  * @param {number} lon
+ * @param {boolean} [forceRefresh] - true ise fuel-price-service.js'teki
+ *   10 dakikalık dahili fiyat önbelleğini de yoksayar.
  */
-async function refresh(lat, lon) {
+async function refresh(lat, lon, forceRefresh = false) {
   if (refreshInProgress) return;
   refreshInProgress = true;
 
   try {
-    // ÖNEMLİ: konum çözümlemesi (reverse-geocode) ile istasyon araması
-    // (Overpass POI) birbirinden BAĞIMSIZ ve PARALEL çalışmalı. Reverse-
-    // geocode servisi yavaş/erişilemez olsa bile istasyon araması ASLA
-    // beklemeden hemen başlamalı - önceki sürümde reverse-geocode İSTASYON
-    // ARAMASINDAN ÖNCE await ediliyordu, bu da geocode yavaş/tıkanık
-    // olduğunda haritanın hiç istasyon bulamamış gibi görünmesine yol
-    // açıyordu.
+    // ÖNEMLİ: konum çözümlemesi (reverse-geocode), istasyon araması
+    // (Overpass POI) VE fiyat çekimi (worker/yedek) birbirinden BAĞIMSIZ ve
+    // PARALEL çalışmalı. Önceki sürümde fiyat çekimi istasyon aramasının
+    // (özellikle sonuç boş çıkıp 20km'e genişleyen ikinci denemenin) BİTMESİNİ
+    // bekliyordu - "akaryakıt fiyatları çok geç geliyor" şikayetinin kök
+    // nedeni buydu, çünkü fiyatlar aslında istasyon aramasından çoğu zaman
+    // çok daha hızlı geliyor. Artık ikisi eşzamanlı başlar; fiyatlar hazır
+    // olur olmaz (istasyonları beklemeden) AYRICA bir ara güncelleme
+    // yayınlanır (aşağıda), böylece kullanıcı konumuna göre o il/ilçenin
+    // fiyat tablosunu istasyon işaretçilerinden önce görebilir.
     const geocodePromise = reverseGeocodeIlIlce(lat, lon).catch((error) => {
       logWarn('fuel-station-cache', 'Konum çözümlenemedi (il/ilçe)', error);
       return null;
@@ -224,13 +232,28 @@ async function refresh(lat, lon) {
       }
     });
 
-    let stations = await findNearbyPoi('fuel', lat, lon, 7000);
-    if (stations.length === 0) {
-      stations = await findNearbyPoi('fuel', lat, lon, 20000);
-    }
+    const stationsPromise = (async () => {
+      let stations = await findNearbyPoi('fuel', lat, lon, 7000);
+      if (stations.length === 0) {
+        stations = await findNearbyPoi('fuel', lat, lon, 20000);
+      }
+      return stations;
+    })();
 
-    const location = await geocodePromise;
-    const prices = location ? await getFuelPrices(location.il, location.ilce, lon) : [];
+    const pricesPromise = geocodePromise.then((location) => (
+      location ? getFuelPrices(location.il, location.ilce, lon, forceRefresh) : []
+    ));
+
+    // Fiyatlar (genelde çok daha hızlı) hazır olur olmaz, istasyon aramasını
+    // beklemeden bir ARA güncelleme yayınla - önceki `stations` listesi
+    // (varsa) korunur, yalnızca location/prices/fetchedAt tazelenir.
+    void Promise.all([geocodePromise, pricesPromise]).then(([location, prices]) => {
+      if (!location) return;
+      cache = { ...cache, location, prices, fetchedAt: Date.now(), fetchedForPosition: { lat, lon } };
+      for (const listener of listeners) listener(getFuelStationCache());
+    });
+
+    const [stations, location, prices] = await Promise.all([stationsPromise, geocodePromise, pricesPromise]);
 
     cache = {
       stations,

@@ -186,15 +186,18 @@ export async function getProvinceFuelPrices(il) {
  * @param {string} il
  * @param {string} ilce
  * @param {number} [currentLon] - "İstanbul" düz adı gelirse yaka tahmini için gerekir.
+ * @param {boolean} [forceRefresh] - true ise 10 dakikalık önbelleği yoksayıp
+ *   doğrudan taze veri çeker (ör. kullanıcı elle "Fiyatları Güncelle"
+ *   düğmesine bastığında - önbellek TTL'i dolmamış olsa bile).
  * @returns {Promise<FuelStationPrice[]>}
  */
-export async function getFuelPrices(il, ilce, currentLon) {
+export async function getFuelPrices(il, ilce, currentLon, forceRefresh = false) {
   const normalizedIl = il.toLowerCase().startsWith('i̇stanbul') || il.toLowerCase() === 'istanbul'
     ? istanbulSideFor(currentLon ?? 29.0) // boylam yoksa Avrupa yakasını varsayar
     : il;
 
   const cacheKey = `${normalizedIl}|${ilce}`;
-  if (cache && cache.key === cacheKey && Date.now() - cache.fetchedAt < CACHE_TTL_MS) {
+  if (!forceRefresh && cache && cache.key === cacheKey && Date.now() - cache.fetchedAt < CACHE_TTL_MS) {
     return cache.stations;
   }
 
@@ -286,6 +289,37 @@ export function getLpgProvider(dagitici) {
 
   const partial = Object.keys(DEFAULT_LPG_PROVIDERS).find((k) => key.includes(k) || k.includes(key));
   return partial ? DEFAULT_LPG_PROVIDERS[partial] : null;
+}
+
+/**
+ * Bir dağıtıcının LPG fiyatını çözer: firmanın KENDİ satırında bir LPG
+ * fiyatı varsa (ör. Aygaz, Milangaz, Petrol Ofisi, Shell gibi kendi LPG'sini
+ * raporlayan firmalar) direkt onu kullanır. Yoksa (ör. Opet, Total gibi çoğu
+ * benzin/motorin bayisinin doviz.com kaynağında hiç LPG sütunu doldurulmuyor
+ * - çünkü bu firmalar LPG'yi kendi adına değil bir LPG sağlayıcısı üzerinden
+ * satıyor) getLpgProvider() ile bilinen sağlayıcıya bakar ve VARSA o
+ * sağlayıcının kendi satırındaki fiyatı "ödünç" kullanır.
+ *
+ * NOT: `stations` FİLTRELENMEMİŞ bir liste olmalıdır (ör. renderRegionPriceTable
+ * yalnızca benzin!=null olan satırları GÖSTERİR, ama Aygaz/Milangaz gibi saf
+ * LPG firmalarının benzin'i null'dur - bu yüzden arama listeye değil, o
+ * bölgenin TÜM ham fiyat kayıtlarına yapılmalıdır, yoksa sağlayıcı satırı
+ * hiç bulunamaz).
+ * @param {string|null|undefined} dagitici
+ * @param {number|null|undefined} ownLpg - Firmanın kendi satırındaki lpg değeri.
+ * @param {FuelStationPrice[]} stations - Bölgenin TAM (filtrelenmemiş) fiyat listesi.
+ * @returns {{price: number|null, viaProvider: string|null}}
+ */
+export function resolveLpgPrice(dagitici, ownLpg, stations) {
+  if (ownLpg != null) return { price: ownLpg, viaProvider: null };
+
+  const provider = getLpgProvider(dagitici);
+  if (!provider) return { price: null, viaProvider: null };
+
+  const providerRow = matchStationByName(stations, provider);
+  return providerRow?.lpg != null
+    ? { price: providerRow.lpg, viaProvider: provider }
+    : { price: null, viaProvider: null };
 }
 
 /**
