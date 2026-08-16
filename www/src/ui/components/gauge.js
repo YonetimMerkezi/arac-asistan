@@ -21,7 +21,7 @@
 
 const ARC_DEGREES = 270;
 const ARC_START_DEGREE = 135;
-const TICK_COUNT = 21;
+const DEFAULT_TICK_COUNT = 9;
 
 const LEGACY_ALIASES = {
   arc: 'analog-modern',
@@ -83,7 +83,8 @@ export class SdaGauge extends HTMLElement {
     const max = Number(this.getAttribute('max') ?? 100);
     const label = this.getAttribute('label') ?? '';
     const unit = this.getAttribute('unit') ?? '';
-    const size = this.getAttribute('size') === 'lg' ? 'lg' : 'sm';
+    const sizeAttr = this.getAttribute('size');
+    const size = ['sm', 'md', 'lg'].includes(sizeAttr) ? sizeAttr : 'md';
     const variant = normalizeVariant(this.getAttribute('variant'));
     const dangerAbove = this.getAttribute('danger-above');
     const hue = this.getAttribute('color-hue');
@@ -153,7 +154,7 @@ export class SdaGauge extends HTMLElement {
       }
       .wrap {
         position:relative;
-        width:min(100%, 300px);
+        width:min(100%, 330px);
         flex:none;
       }
       svg { display:block; width:100%; height:auto; overflow:visible; }
@@ -214,9 +215,9 @@ export class SdaGauge extends HTMLElement {
       .digital-card {
         min-height:145px;
         padding:24px 16px;
-        background:linear-gradient(145deg,var(--sda-bg-elevated,#242933),var(--sda-bg-surface,#171A20));
-        border:1px solid color-mix(in srgb,currentColor 65%,transparent);
-        box-shadow:inset 0 1px 0 rgba(255,255,255,.04), 0 10px 30px rgba(0,0,0,.16);
+        background:linear-gradient(145deg,var(--sda-gauge-surface,var(--sda-bg-elevated)),var(--sda-gauge-surface-2,var(--sda-bg-surface)));
+        border:1px solid var(--sda-hairline);
+        box-shadow:inset 0 1px 0 var(--sda-gauge-highlight,rgba(255,255,255,.04)), var(--sda-shadow-elevated);
       }
       .digital-card .val { font-size:clamp(2.8rem,9vw,5.2rem); }
       .digital-modern-box {
@@ -228,7 +229,7 @@ export class SdaGauge extends HTMLElement {
         align-items:center;
         justify-content:center;
         background:radial-gradient(circle at 50% 45%, color-mix(in srgb,currentColor 10%,transparent), transparent 58%);
-        box-shadow:inset 0 0 30px rgba(255,255,255,.025);
+        box-shadow:inset 0 0 30px var(--sda-gauge-highlight,rgba(255,255,255,.025));
       }
       .digital-modern-box .readout { inset:12%; }
       .digital-modern-box .val { font-size:clamp(2.6rem,9vw,4.8rem); }
@@ -243,9 +244,13 @@ export class SdaGauge extends HTMLElement {
       .bar-fill { height:100%; border-radius:99px; }
       .small-info { fill:var(--sda-text-muted,#8B93A1); font-size:4px; font-family:Inter,sans-serif; }
       .center-dot { filter:drop-shadow(0 0 4px currentColor); }
-      :host([size="sm"]) .wrap { max-width:190px; }
+      .live-caption { font-size:.7rem; letter-spacing:.14em; color:var(--sda-text-muted); margin-bottom:10px; font-weight:700; }
+      .readout .unit { color:var(--sda-text-muted); }
+      :host([size="sm"]) .wrap { max-width:155px; }
+      :host([size="md"]) .wrap { max-width:220px; }
       :host([size="lg"]) .wrap { max-width:330px; }
-      :host([size="sm"]) .label { font-size:.72rem; margin-top:8px; }
+      :host([size="sm"]) .label { font-size:.68rem; margin-top:7px; }
+      :host([size="md"]) .label { font-size:.76rem; margin-top:9px; }
       :host([size="lg"]) .label { font-size:.9rem; margin-top:12px; }
     `;
   }
@@ -254,17 +259,52 @@ export class SdaGauge extends HTMLElement {
     return { box: 160, cx: 80, cy: 80, radius: 61 };
   }
 
-  renderTicks(g, count = TICK_COUNT, min = 0, max = 100) {
-    return Array.from({ length: count }, (_, i) => {
-      const f = i / (count - 1);
+  getScaleValues(min, max, unit) {
+    const range = max - min;
+    let step;
+    const u = String(unit).toLowerCase();
+
+    if (u === 'km/h' || u === 'mph') step = 20;
+    else if (u === 'rpm') step = 1000;
+    else if (u === '°c' || u === '°f') step = 20;
+    else if (u === 'v') step = range <= 10 ? 1 : 2;
+    else if (u === '%') step = 20;
+    else if (u === 'λ') step = 0.2;
+    else if (u === '°') step = range <= 160 ? 20 : 10;
+    else if (u === 'kpa') step = 25;
+    else if (u === 'g/s') step = 50;
+    else if (u === 'l/h') step = 10;
+    else if (u === 'l/100km') step = 5;
+    else if (u === 's') step = 3000;
+    else if (u === 'km') step = range > 10000 ? 10000 : 1000;
+    else {
+      const raw = range / DEFAULT_TICK_COUNT;
+      const magnitude = 10 ** Math.floor(Math.log10(Math.max(raw, 0.000001)));
+      const normalized = raw / magnitude;
+      step = (normalized <= 1 ? 1 : normalized <= 2 ? 2 : normalized <= 5 ? 5 : 10) * magnitude;
+    }
+
+    const values = [];
+    const start = Math.ceil(min / step - 1e-9) * step;
+    for (let value = start; value <= max + 1e-9; value += step) {
+      values.push(Number(value.toFixed(4)));
+      if (values.length > 25) break;
+    }
+    if (!values.length) values.push(min);
+    return values;
+  }
+
+  renderTicks(g, min = 0, max = 100, unit = '') {
+    const values = this.getScaleValues(min, max, unit);
+    return values.map((value) => {
+      const f = Math.max(0, Math.min(1, (value - min) / (max - min)));
       const angle = ARC_START_DEGREE + ARC_DEGREES * f;
-      const major = i % 2 === 0;
-      const outer = pointOnCircle(g.cx, g.cy, g.radius + (major ? 5 : 3), angle);
-      const inner = pointOnCircle(g.cx, g.cy, g.radius - (major ? 9 : 5), angle);
-      const value = min + (max - min) * f;
+      const outer = pointOnCircle(g.cx, g.cy, g.radius + 5, angle);
+      const inner = pointOnCircle(g.cx, g.cy, g.radius - 9, angle);
+      const textPoint = pointOnCircle(g.cx, g.cy, g.radius - 18, angle);
       return `
-        <line class="${major ? 'tick-major' : 'tick'}" x1="${inner.x}" y1="${inner.y}" x2="${outer.x}" y2="${outer.y}" stroke-width="${major ? 2.5 : 1.4}"/>
-        ${major ? `<text class="scale-text" x="${pointOnCircle(g.cx,g.cy,g.radius-18,angle).x}" y="${pointOnCircle(g.cx,g.cy,g.radius-18,angle).y + 1.5}" text-anchor="middle">${this.formatScale(value)}</text>` : ''}
+        <line class="tick-major" x1="${inner.x}" y1="${inner.y}" x2="${outer.x}" y2="${outer.y}" stroke-width="2.5"/>
+        <text class="scale-text" x="${textPoint.x}" y="${textPoint.y + 1.5}" text-anchor="middle">${this.formatScale(value)}</text>
       `;
     }).join('');
   }
@@ -283,12 +323,12 @@ export class SdaGauge extends HTMLElement {
     return `
       <div class="wrap">
         <svg viewBox="0 0 160 160" aria-hidden="true">
-          <circle cx="80" cy="80" r="68" fill="none" stroke="rgba(255,255,255,.035)" stroke-width="8"/>
+          <circle cx="80" cy="80" r="68" fill="none" stroke="var(--sda-gauge-ring)" stroke-width="8"/>
           <path d="${buildArcPath(g.cx,g.cy,g.radius,1)}" class="track" stroke-width="4"/>
-          ${this.renderTicks(g, TICK_COUNT, min, max)}
+          ${this.renderTicks(g, min, max, unit)}
           <line x1="${tail.x}" y1="${tail.y}" x2="${tip.x}" y2="${tip.y}" class="needle" stroke="${color}" stroke-width="4"/>
           <circle cx="80" cy="80" r="8" fill="${color}" class="center-dot"/>
-          <circle cx="80" cy="80" r="3" fill="#11151A"/>
+          <circle cx="80" cy="80" r="3" fill="var(--sda-gauge-center)"/>
         </svg>
         <div class="readout" style="justify-content:flex-end;padding-bottom:12%;">
           <span class="val" style="font-size:${size === 'lg' ? '2.4rem' : '1.45rem'};">${displayValue}</span>
@@ -306,10 +346,10 @@ export class SdaGauge extends HTMLElement {
         <svg viewBox="0 0 160 160" aria-hidden="true">
           <path d="${buildArcPath(g.cx,g.cy,g.radius,1)}" class="track" stroke-width="10"/>
           <path d="${buildArcPath(g.cx,g.cy,g.radius,fraction)}" class="value-arc" stroke="${color}" stroke-width="10"/>
-          ${this.renderTicks(g, 11, min, max)}
+          ${this.renderTicks(g, min, max, unit)}
           <line x1="80" y1="80" x2="${tip.x}" y2="${tip.y}" class="needle" stroke="${color}" stroke-width="4"/>
           <circle cx="80" cy="80" r="8" fill="${color}" class="center-dot"/>
-          <circle cx="80" cy="80" r="3" fill="#11151A"/>
+          <circle cx="80" cy="80" r="3" fill="var(--sda-gauge-center)"/>
         </svg>
         <div class="readout" style="justify-content:flex-end;padding-bottom:13%;">
           <span class="val" style="font-size:${size === 'lg' ? '2.7rem' : '1.55rem'};">${displayValue}</span>
@@ -322,7 +362,7 @@ export class SdaGauge extends HTMLElement {
     return `
       <div class="wrap">
         <div class="digital-card" style="color:${color};">
-          <div style="font-size:.72rem;letter-spacing:.14em;color:var(--sda-text-muted,#8B93A1);margin-bottom:10px;">LIVE DATA</div>
+          <div class="live-caption">CANLI VERİ</div>
           <span class="val" style="color:${color};">${displayValue}</span>
           <span class="unit">${unit}</span>
         </div>
@@ -337,12 +377,12 @@ export class SdaGauge extends HTMLElement {
       <div class="wrap">
         <div class="digital-modern-box" style="color:${color};">
           <svg viewBox="0 0 160 160" aria-hidden="true" style="position:absolute;inset:0;">
-            <circle cx="80" cy="80" r="61" fill="none" stroke="rgba(255,255,255,.07)" stroke-width="8"/>
+            <circle cx="80" cy="80" r="61" fill="none" stroke="var(--sda-gauge-track)" stroke-width="8"/>
             <circle cx="80" cy="80" r="61" fill="none" stroke="${color}" stroke-width="8" stroke-linecap="round"
               stroke-dasharray="${dash} ${circumference-dash}" transform="rotate(-90 80 80)"/>
           </svg>
           <div class="readout">
-            <span style="font-size:.7rem;letter-spacing:.12em;color:var(--sda-text-muted,#8B93A1);">DIGITAL</span>
+            <span class="live-caption">DİJİTAL</span>
             <span class="val" style="color:${color};margin-top:7px;">${displayValue}</span>
             <span class="unit">${unit}</span>
           </div>
@@ -359,12 +399,12 @@ export class SdaGauge extends HTMLElement {
         <svg viewBox="0 0 160 160" aria-hidden="true">
           <path d="${buildArcPath(g.cx,g.cy,g.radius,1)}" class="track" stroke-width="5"/>
           <path d="${buildArcPath(g.cx,g.cy,g.radius,fraction)}" class="value-arc" stroke="${color}" stroke-width="5"/>
-          ${this.renderTicks(g, 9, min, max)}
+          ${this.renderTicks(g, min, max, unit)}
           <line x1="80" y1="80" x2="${tip.x}" y2="${tip.y}" class="needle" stroke="${color}" stroke-width="3"/>
           <circle cx="80" cy="80" r="7" fill="${color}"/>
         </svg>
         <div class="readout" style="justify-content:center;">
-          <span style="font-size:.68rem;letter-spacing:.13em;color:var(--sda-text-muted,#8B93A1);">HYBRID</span>
+          <span class="live-caption">HİBRİT</span>
           <span class="val" style="font-size:${size === 'lg' ? '2.6rem' : '1.5rem'};margin-top:6px;">${displayValue}</span>
           <span class="unit">${unit}</span>
         </div>
