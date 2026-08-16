@@ -1,0 +1,18 @@
+/* Smart Drive AI — Navigation UI. Tema değişkenleri kullanılır; açık/koyu uyumludur. */
+[data-view="navigation"] { --nav-overlay: color-mix(in srgb, var(--sda-bg-elevated) 92%, transparent); }
+.sda-navigation-hud { display:none; position:absolute; left:12px; right:58px; top:12px; z-index:1400; padding:12px; border:1px solid var(--sda-border, rgba(127,127,127,.22)); border-radius:18px; background:var(--nav-overlay); color:var(--sda-text-primary); box-shadow:var(--sda-shadow-elevated); backdrop-filter:blur(16px); }
+.sda-navigation-hud.is-active { display:block; }
+.sda-navigation-hud__top { display:flex; align-items:center; gap:10px; }
+.sda-navigation-hud__arrow { width:42px; height:42px; flex:0 0 42px; display:grid; place-items:center; border-radius:13px; background:var(--sda-accent-soft); color:var(--sda-accent); font-size:27px; font-weight:800; }
+.sda-navigation-hud__instruction { min-width:0; flex:1; }
+.sda-navigation-hud__instruction strong { display:block; font-size:15px; line-height:1.2; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.sda-navigation-hud__instruction span { display:block; margin-top:3px; color:var(--sda-text-muted); font-size:11px; }
+.sda-navigation-hud__close { border:0; background:transparent; color:var(--sda-text-muted); font-size:27px; line-height:1; padding:4px; }
+.sda-navigation-hud__stats { display:grid; grid-template-columns:repeat(3,1fr); gap:7px; margin-top:9px; }
+.sda-navigation-hud__stats > div { min-width:0; padding:8px 5px; text-align:center; border-radius:11px; background:var(--sda-bg-surface); }
+.sda-navigation-hud__stats strong { display:block; font-family:var(--sda-font-display); font-size:15px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.sda-navigation-hud__stats span { display:block; margin-top:2px; font-size:8px; letter-spacing:.08em; color:var(--sda-text-faint); }
+.sda-navigation-hud__fuel { margin-top:8px; color:var(--sda-text-muted); font-size:10px; }
+body.sda-fullscreen-nav [data-view="navigation"] .sda-navigation-hud { top:calc(env(safe-area-inset-top, 0px) + 10px); }
+@media (max-width:520px) { .sda-navigation-hud { left:8px; right:54px; } .sda-navigation-hud__instruction strong { font-size:14px; } }
+@media (prefers-reduced-motion:no-preference) { .sda-navigation-hud.is-active { animation:sda-nav-hud-in .18s ease-out; } @keyframes sda-nav-hud-in { from { opacity:0; transform:translateY(-5px); } to { opacity:1; transform:none; } } }
