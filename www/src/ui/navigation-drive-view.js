@@ -2,23 +2,22 @@
  * SmartDriveAI - Navigation Drive View
  * Robust visible-first initialization.
  */
+
+import { searchAddress } from '../maps/forward-geocode.js';
+import { getDrivingRoute } from '../maps/route-service.js';
+import { getLastPosition } from '../core/gps-tracker.js';
+
 let navState = {
   map: null,
   marker: null,
   routeLine: null,
+  destMarker: null,
   watchId: null,
   ready: false,
   follow: true,
-  lastPos: null
+  lastPos: null,
+  currentDest: null,
 };
-
-function esc(v) {
-  return String(v ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-}
-
-function getGps() {
-  return window.gpsTracker || window.GPSTracker || window.gps || null;
-}
 
 function getContainer() {
   return document.getElementById('navigation-drive-map') ||
@@ -46,6 +45,8 @@ function ensureLayout() {
           <input id="sda-nav-destination" type="search" placeholder="Nereye gidiyorsun?" autocomplete="off">
           <button id="sda-nav-search-btn">Ara</button>
         </div>
+
+        <div id="sda-nav-suggestions" style="display:none; background:var(--sda-bg-elevated,#1c1f26); border-radius:8px; margin-bottom:6px; overflow:hidden; max-height:200px; overflow-y:auto;"></div>
 
         <div class="sda-nav-map-wrap">
           <div id="navigation-drive-map" class="sda-nav-map"></div>
@@ -94,18 +95,33 @@ function setSpeed(v) {
   if (el) el.textContent = Math.round(Number(v) || 0);
 }
 
-async function getCurrentPosition() {
-  const gps = getGps();
-  if (gps) {
-    try {
-      if (typeof gps.getCurrentPosition === 'function') {
-        const p = await gps.getCurrentPosition();
-        if (p?.coords) return p.coords;
-      }
-      if (gps.currentPosition?.coords) return gps.currentPosition.coords;
-      if (gps.lastPosition?.coords) return gps.lastPosition.coords;
-    } catch {}
+function setStats(distanceKm, durationMinutes) {
+  const distEl = document.getElementById('sda-nav-distance');
+  const etaEl = document.getElementById('sda-nav-eta');
+
+  if (distEl) distEl.textContent = distanceKm >= 1
+    ? `${distanceKm.toFixed(1)} km`
+    : `${Math.round(distanceKm * 1000)} m`;
+
+  if (etaEl) {
+    const now = new Date(Date.now() + durationMinutes * 60 * 1000);
+    const h = now.getHours().toString().padStart(2, '0');
+    const m = now.getMinutes().toString().padStart(2, '0');
+    etaEl.textContent = `${h}:${m}`;
   }
+}
+
+function clearStats() {
+  const distEl = document.getElementById('sda-nav-distance');
+  const etaEl = document.getElementById('sda-nav-eta');
+  if (distEl) distEl.textContent = '—';
+  if (etaEl) etaEl.textContent = '—';
+}
+
+async function getCurrentPosition() {
+  // Önce paylaşılan GPS tracker'dan dene (daha hızlı)
+  const last = getLastPosition();
+  if (last) return { latitude: last.latitude, longitude: last.longitude };
 
   if (!navigator.geolocation) throw new Error('GPS desteklenmiyor');
   return await new Promise((resolve, reject) => {
@@ -155,7 +171,6 @@ function createMap(coords) {
   showLoading(false);
   setMessage('Konumunuz gösteriliyor.');
 
-  // Critical for Leaflet when a view was previously hidden.
   requestAnimationFrame(() => {
     setTimeout(() => {
       try {
@@ -170,6 +185,7 @@ function createMap(coords) {
 
 function updatePosition(coords) {
   if (!navState.map || !navState.marker || !coords) return;
+  navState.lastPos = coords;
   const latlng = [coords.latitude, coords.longitude];
   navState.marker.setLatLng(latlng);
 
@@ -180,6 +196,21 @@ function updatePosition(coords) {
   if (navState.follow) {
     navState.map.panTo(latlng, { animate: true, duration: 0.35 });
   }
+
+  // Rota aktifse mesafe/ETA'yı güncelle
+  if (navState.currentDest) {
+    updateDistanceToDestination(coords);
+  }
+}
+
+function updateDistanceToDestination(coords) {
+  if (!navState.currentDest || !window.L) return;
+  const from = L.latLng(coords.latitude, coords.longitude);
+  const to = L.latLng(navState.currentDest.lat, navState.currentDest.lon);
+  const distKm = from.distanceTo(to) / 1000;
+  // Ortalama 60 km/sa şehir içi hız varsayımı
+  const etaMin = (distKm / 60) * 60;
+  setStats(distKm, etaMin);
 }
 
 async function startGps() {
@@ -191,6 +222,128 @@ async function startGps() {
     () => setMessage('GPS konumu alınamadı. Konum iznini kontrol edin.'),
     { enableHighAccuracy: true, maximumAge: 1500, timeout: 8000 }
   );
+}
+
+/**
+ * Verilen hedefe rota çizer.
+ * @param {{lat: number, lon: number, label: string}} dest
+ */
+async function routeTo(dest) {
+  if (!navState.map) return;
+
+  setMessage('Rota hesaplanıyor…');
+  clearStats();
+
+  let from;
+  try {
+    from = await getCurrentPosition();
+  } catch {
+    setMessage('Konum alınamadı. GPS iznini kontrol edin.');
+    return;
+  }
+
+  const routes = await getDrivingRoute(
+    { lat: from.latitude, lon: from.longitude },
+    { lat: dest.lat, lon: dest.lon },
+    { destinationLabel: dest.label }
+  );
+
+  if (!routes || routes.length === 0) {
+    setMessage('Rota bulunamadı. İnternet bağlantısını kontrol edin.');
+    return;
+  }
+
+  const best = routes[0];
+
+  // Önceki rota ve hedef işaretçisini temizle
+  if (navState.routeLine) {
+    navState.map.removeLayer(navState.routeLine);
+    navState.routeLine = null;
+  }
+  if (navState.destMarker) {
+    navState.map.removeLayer(navState.destMarker);
+    navState.destMarker = null;
+  }
+
+  // Rota çizgisini çiz
+  navState.routeLine = L.polyline(best.coordinates, {
+    color: '#4A90E2',
+    weight: 5,
+    opacity: 0.85,
+  }).addTo(navState.map);
+
+  // Hedef işaretçisi
+  navState.destMarker = L.marker([dest.lat, dest.lon])
+    .addTo(navState.map)
+    .bindPopup(dest.label)
+    .openPopup();
+
+  // Rotayı sığdır
+  navState.map.fitBounds(navState.routeLine.getBounds(), { padding: [40, 40] });
+
+  navState.currentDest = dest;
+  navState.follow = false; // Rota görünürken otomatik takibi kapat
+
+  const distText = best.distanceKm >= 1
+    ? `${best.distanceKm.toFixed(1)} km`
+    : `${Math.round(best.distanceKm * 1000)} m`;
+  const etaMin = Math.round(best.durationMinutes);
+
+  setStats(best.distanceKm, best.durationMinutes);
+  setMessage(`${dest.label} · ${distText} · ~${etaMin} dk`);
+}
+
+/**
+ * Adres arama + rota: Nominatim ile geocode et, ilk sonuca rota çiz.
+ * @param {string} query
+ */
+async function searchAndRoute(query) {
+  if (!query) return;
+
+  setMessage('Adres aranıyor…');
+  hideSuggestions();
+
+  const results = await searchAddress(query, 5);
+
+  if (results.length === 0) {
+    setMessage(`"${query}" için sonuç bulunamadı. Daha ayrıntılı bir adres deneyin.`);
+    return;
+  }
+
+  if (results.length === 1) {
+    // Tek sonuç: direkt rota çiz
+    await routeTo({ lat: results[0].lat, lon: results[0].lon, label: results[0].label.split(',')[0] });
+    return;
+  }
+
+  // Birden fazla sonuç: öneri listesi göster
+  showSuggestions(results);
+}
+
+function showSuggestions(results) {
+  const el = document.getElementById('sda-nav-suggestions');
+  if (!el) return;
+
+  el.style.display = 'block';
+  el.innerHTML = results.map((r, i) => {
+    const short = r.label.split(',').slice(0, 3).join(',');
+    return `<button data-suggestion-index="${i}" style="display:block; width:100%; text-align:left; padding:10px 12px; background:none; border:none; border-bottom:1px solid rgba(255,255,255,0.06); color:var(--sda-text-primary,#fff); font-size:0.85rem; cursor:pointer;">${short}</button>`;
+  }).join('');
+
+  el.querySelectorAll('[data-suggestion-index]').forEach((btn) => {
+    btn.addEventListener('click', async () => {
+      const i = Number(btn.getAttribute('data-suggestion-index'));
+      hideSuggestions();
+      const r = results[i];
+      document.getElementById('sda-nav-destination').value = r.label.split(',')[0];
+      await routeTo({ lat: r.lat, lon: r.lon, label: r.label.split(',')[0] });
+    });
+  });
+}
+
+function hideSuggestions() {
+  const el = document.getElementById('sda-nav-suggestions');
+  if (el) { el.style.display = 'none'; el.innerHTML = ''; }
 }
 
 export async function initNavigationDriveView() {
@@ -215,15 +368,34 @@ export async function initNavigationDriveView() {
       const c = await getCurrentPosition();
       if (!navState.map) createMap(c);
       updatePosition(c);
+      navState.follow = true;
+      navState.map?.setView([c.latitude, c.longitude], 16);
     } catch {
       setMessage('Konum alınamadı. Android konum iznini açın.');
     }
   });
 
-  document.getElementById('sda-nav-search-btn')?.addEventListener('click', () => {
+  // Ara butonu — artık gerçek geocoding + rota çizimi
+  document.getElementById('sda-nav-search-btn')?.addEventListener('click', async () => {
     const q = document.getElementById('sda-nav-destination')?.value?.trim();
-    if (q) setMessage(`Hedef: ${q} — rota hesaplama hazır.`);
+    if (q) await searchAndRoute(q);
   });
+
+  // Enter tuşu desteği
+  document.getElementById('sda-nav-destination')?.addEventListener('keydown', async (e) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      const q = e.target.value?.trim();
+      if (q) await searchAndRoute(q);
+    }
+  });
+
+  // Öneri listesini dışarıya tıklayınca kapat
+  document.addEventListener('click', (e) => {
+    if (!e.target.closest('#sda-nav-suggestions') && !e.target.closest('#sda-nav-destination')) {
+      hideSuggestions();
+    }
+  }, { passive: true });
 
   try {
     const c = await getCurrentPosition();
@@ -231,13 +403,12 @@ export async function initNavigationDriveView() {
     updatePosition(c);
     startGps();
   } catch {
-    // Still create a visible map even if GPS permission is denied.
     createMap({ latitude: 39.9208, longitude: 32.8541 });
     setMessage('GPS izni verilmedi. Konum butonuna basarak tekrar deneyin.');
   }
 
   window.addEventListener('resize', () => {
-    try { navState.map?.invalidateSize(true); } catch {}
+    try { navState.map?.invalidateSize(true); } catch {};
   });
 }
 
@@ -247,5 +418,8 @@ export function destroyNavigationDriveView() {
   try { navState.map?.remove(); } catch {}
   navState.map = null;
   navState.marker = null;
+  navState.routeLine = null;
+  navState.destMarker = null;
   navState.ready = false;
+  navState.currentDest = null;
 }
