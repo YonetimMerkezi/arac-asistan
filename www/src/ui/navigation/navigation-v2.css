@@ -1,0 +1,70 @@
+
+/* Navigation V2 HUD */
+.sda-nav__turn {
+  display: none;
+  position: absolute;
+  z-index: 1100;
+  left: 12px;
+  right: 62px;
+  top: 12px;
+  padding: 13px 15px;
+  border-radius: 17px;
+  background: rgba(12,15,20,.92);
+  border: 1px solid rgba(255,255,255,.14);
+  color: #fff;
+  backdrop-filter: blur(14px);
+  box-shadow: 0 12px 30px rgba(0,0,0,.28);
+}
+
+.sda-nav__turn strong {
+  display: block;
+  font-size: 17px;
+}
+
+.sda-nav__turn small {
+  display: block;
+  margin-top: 4px;
+  color: #aab2bd;
+}
+
+.sda-nav__hud {
+  display: none;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 7px;
+  margin-top: 10px;
+}
+
+.sda-nav__hud-item {
+  padding: 9px 8px;
+  text-align: center;
+  border-radius: 12px;
+  background: rgba(255,255,255,.05);
+}
+
+.sda-nav__hud-item strong {
+  display: block;
+  font-size: 16px;
+}
+
+.sda-nav__hud-item span {
+  display: block;
+  margin-top: 2px;
+  font-size: 9px;
+  color: #9ca5b1;
+  text-transform: uppercase;
+}
+
+.sda-nav.is-navigating .sda-nav__turn,
+.sda-nav.is-navigating .sda-nav__hud {
+  display: block;
+}
+
+.sda-nav__route-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.sda-nav__route-actions button {
+  flex: 1;
+}
