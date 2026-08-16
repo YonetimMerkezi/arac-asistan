@@ -10,6 +10,7 @@ import { offlineTileLayer } from '../maps/offline-tile-layer.js';
 import { openAddressSearchModal } from './components/address-search-modal.js';
 import { drawRouteTo } from './navigation-route-panel.js';
 import { iconMarkup } from './icons.js';
+import { onViewChange } from '../core/view-router.js';
 
 let map = null;
 let marker = null;
@@ -107,10 +108,24 @@ export function initNavigationDriveView() {
     attributionControl: true,
   }).setView(DEFAULT_CENTER, 6);
 
-  offlineTileLayer({
+  const offline = offlineTileLayer({
     attribution: '© OpenStreetMap katkıda bulunanlar',
     maxZoom: 19,
-  }).addTo(map);
+  });
+  offline.addTo(map);
+
+  // Ağ tile'ları birkaç saniye içinde hiç gelmezse standart Leaflet tile
+  // katmanını da ekle. Böylece boş/siyah harita ekranında kalınmaz.
+  let fallbackAdded = false;
+  const addTileFallback = () => {
+    if (fallbackAdded || !map) return;
+    fallbackAdded = true;
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      maxZoom: 19,
+      attribution: '© OpenStreetMap katkıda bulunanlar',
+    }).addTo(map);
+  };
+  setTimeout(addTileFallback, 3500);
 
   L.control.zoom({position: 'bottomright'}).addTo(map);
 
@@ -151,8 +166,21 @@ export function initNavigationDriveView() {
 
   const last = positionOf(getLastPosition());
   if (last) updatePosition(getLastPosition());
-  setTimeout(() => map?.invalidateSize(), 150);
-  setTimeout(() => map?.invalidateSize(), 500);
+  // View başlangıçta hidden olduğu için Leaflet boyutu 0 hesaplayabilir.
+  // Ekran gerçekten görünür olduğunda invalidateSize zorunludur.
+  setTimeout(() => map?.invalidateSize(true), 150);
+  setTimeout(() => map?.invalidateSize(true), 500);
+  onViewChange((viewName) => {
+    if (viewName !== 'navigation-drive' || !map) return;
+    requestAnimationFrame(() => {
+      map.invalidateSize(true);
+      const p = positionOf(getLastPosition());
+      if (p) {
+        firstFix = false;
+        if (follow) map.setView([p.lat, p.lon], Math.max(map.getZoom(), 16), { animate: false });
+      }
+    });
+  });
 
   // Existing route progress cards can update the dedicated summary through events.
   window.addEventListener('sda:navigation:progress', onRouteProgress);
