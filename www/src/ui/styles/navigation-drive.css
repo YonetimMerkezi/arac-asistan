@@ -28,3 +28,16 @@
 .sda-drive-car-icon{background:transparent;border:0}
 .sda-drive-car-arrow{width:42px;height:42px;border-radius:50%;display:grid;place-items:center;background:var(--sda-accent);color:#071014;border:3px solid rgba(255,255,255,.9);box-shadow:0 5px 18px rgba(0,0,0,.28);font-size:20px;line-height:1}
 @media(max-width:420px){.sda-drive-map{height:48vh;min-height:310px}.sda-drive-title{font-size:18px}}
+
+
+/* Navigasyon ekranı: dar cihazlarda yatay taşmayı kesin olarak engelle */
+.sda-drive-nav, .sda-drive-map-wrap, .sda-drive-map, .sda-drive-search, .sda-drive-live, .sda-drive-safety { width:100%; max-width:100%; min-width:0; box-sizing:border-box; }
+.sda-drive-nav { overflow-x:hidden; }
+.sda-drive-map-wrap { min-height:300px; }
+.sda-drive-map { width:100%; height:48vh; min-height:300px; }
+@media (max-width:380px) {
+  .sda-drive-nav { padding-left:8px; padding-right:8px; }
+  .sda-drive-quick, .sda-drive-live, .sda-drive-safety { grid-template-columns:repeat(3,minmax(0,1fr)); }
+  .sda-drive-quick button { min-width:0; overflow:hidden; white-space:nowrap; }
+  .sda-drive-map { height:44vh; min-height:280px; }
+}
