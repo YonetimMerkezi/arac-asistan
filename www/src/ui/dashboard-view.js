@@ -169,7 +169,7 @@ function renderNormalMode(content) {
     gauge.setAttribute('min', String(minDisplay.value));
     gauge.setAttribute('max', String(maxDisplay.value));
     gauge.setAttribute('size', isPrimary ? 'lg' : 'sm');
-    gauge.setAttribute('variant', instance.gaugeStyle ?? 'analog-modern');
+    gauge.setAttribute('variant', instance.gaugeStyle ?? 'arc');
     gauge.setAttribute('value', String(minDisplay.value));
     if (def.dangerAbove !== undefined) {
       gauge.setAttribute('danger-above', String(convertForDisplay(def, def.dangerAbove).value));

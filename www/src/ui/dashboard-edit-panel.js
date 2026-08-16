@@ -24,19 +24,14 @@ import {
 /** @type {number[]} Renk seçici için sunulan ön ayar tonlar (0-360). */
 const COLOR_PRESETS = [28, 4, 48, 142, 199, 291, 335, 0];
 
-/** @type {{value: string, label: string}[]} Seçilebilir gösterge tipleri - bkz. ui/components/gauge.js. */
+/** @type {{value: string, label: string, description: string}[]} Seçilebilir gösterge tipleri. */
 const GAUGE_STYLE_OPTIONS = [
-  { value: 'analog-classic', label: 'Analog Klasik' },
-  { value: 'analog-modern', label: 'Analog Modern' },
-  { value: 'digital-card', label: 'Dijital Kart' },
-  { value: 'digital-modern', label: 'Dijital Modern' },
-  { value: 'hybrid', label: 'Hibrit' },
-  { value: 'compact', label: 'Kompakt Panel' },
-  // Eski kayıtlar için geriye dönük uyumluluk seçenekleri.
-  { value: 'arc', label: 'Eski Yay' },
-  { value: 'needle', label: 'Eski İbreli' },
-  { value: 'digital', label: 'Eski Dijital' },
-  { value: 'bar', label: 'Eski Bar' },
+  { value: 'analog-classic', label: 'Analog Klasik', description: 'Klasik kadran ve ibre' },
+  { value: 'analog-modern', label: 'Analog Modern', description: 'Temiz, modern yay göstergesi' },
+  { value: 'digital-card', label: 'Dijital Kart', description: 'Büyük sayısal kart' },
+  { value: 'digital-modern', label: 'Dijital Modern', description: 'Neon halkalı dijital tasarım' },
+  { value: 'hybrid', label: 'Hibrit', description: 'Analog ibre + dijital okuma' },
+  { value: 'compact', label: 'Kompakt', description: 'Az yer kaplayan yatay gösterge' },
 ];
 
 /** @type {(() => HTMLElement|null|undefined)|null} Canlı içerik konteynerini HER ZAMAN taze alan getter - refreshEditModePanel() bunu kullanır. */
@@ -184,7 +179,7 @@ function refreshEditModePanel() {
  * @returns {string}
  */
 function gaugeStyleLabel(style) {
-  return GAUGE_STYLE_OPTIONS.find((o) => o.value === (style ?? 'analog-modern'))?.label ?? 'Yay (Modern)';
+  return GAUGE_STYLE_OPTIONS.find((o) => o.value === (style ?? 'analog-modern'))?.label ?? 'Analog Modern';
 }
 
 /**
@@ -213,7 +208,7 @@ function openGaugeStylePicker(pid, currentStyle, onSelect) {
             <sda-gauge value="65" min="0" max="100" size="sm" variant="${option.value}"></sda-gauge>
           </span>
         </span>
-        <span class="sda-card__value" style="font-size:0.95rem;">${option.label}</span>
+        <span style="display:flex; flex-direction:column; gap:2px;"><span class="sda-card__value" style="font-size:0.95rem;">${option.label}</span><small style="color:var(--sda-text-muted); font-size:0.72rem;">${option.description}</small></span>
       </button>
     `).join('');
 
