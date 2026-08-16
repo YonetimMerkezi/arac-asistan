@@ -39,7 +39,6 @@ import { renderFuelPanel, clearFuelPanel } from './navigation-fuel-panel.js';
 import { mountGpsDetailCard } from './components/gps-detail-card.js';
 import { iconMarkup } from './icons.js';
 import { logWarn } from '../core/logger.js';
-import { onGuidanceEvent, stopGuidance } from '../maps/turn-by-turn.js';
 
 /** @type {[number, number]} Konum yokken haritanın açılacağı varsayılan merkez (Türkiye geneli). */
 const DEFAULT_CENTER = [39.0, 35.0];
@@ -95,7 +94,7 @@ export function initNavigationView() {
         </div>
       </div>
       <button type="button" data-address-search class="sda-btn sda-btn--primary" style="width:100%; margin-bottom:8px;">
-        ${iconMarkup('search', { size: 18 })} Nereye Gidiyorsun?
+        ${iconMarkup('search', { size: 18 })} Nereye Gidiyorsun? (Adres Ara)
       </button>
       <button type="button" data-open-google-maps-general class="sda-nav-btn" style="width:100%; margin-bottom:8px; background:var(--sda-bg-elevated); flex-direction:row; justify-content:center; gap:8px;">
         ${iconMarkup('map', { size: 18 })}<span>Google Haritalar'ı Doğrudan Aç</span>
@@ -120,23 +119,6 @@ export function initNavigationView() {
     </div>
     <div data-map-wrapper style="position:relative;">
       <div data-map style="height: 48vh; border-radius: var(--sda-radius-md); overflow:hidden;"></div>
-    <div data-navigation-hud class="sda-navigation-hud" aria-live="polite">
-      <div class="sda-navigation-hud__top">
-        <span class="sda-navigation-hud__arrow" data-nav-turn-arrow>↑</span>
-        <div class="sda-navigation-hud__instruction">
-          <strong data-nav-instruction>Rota hazır</strong>
-          <span data-nav-step-distance>--</span>
-        </div>
-        <button type="button" data-stop-guidance class="sda-navigation-hud__close" aria-label="Navigasyonu durdur">×</button>
-      </div>
-      <div class="sda-navigation-hud__stats">
-        <div><strong data-nav-remaining>--</strong><span>KALAN</span></div>
-        <div><strong data-nav-eta>--</strong><span>VARIŞ</span></div>
-        <div><strong data-nav-status>Hazır</strong><span>DURUM</span></div>
-      </div>
-      <div class="sda-navigation-hud__fuel" data-nav-fuel>⛽ Yakıt tahmini hazırlanıyor…</div>
-    </div>
-
       <div style="position:absolute; top:8px; right:8px; z-index:1200; display:flex; flex-direction:column; gap:6px;">
         <button type="button" data-fullscreen-toggle class="sda-nav-btn" style="background:var(--sda-bg-elevated); padding:8px; box-shadow:var(--sda-shadow-elevated);">
           ${iconMarkup('fullscreen', { size: 20 })}
@@ -228,45 +210,6 @@ export function initNavigationView() {
   bindFullscreenToggle(container, map);
   bindTapRouteMode(container, map);
 
-  const guidanceOff = onGuidanceEvent((type, detail) => {
-    const hud = container.querySelector('[data-navigation-hud]');
-    if (!hud) return;
-    const instruction = container.querySelector('[data-nav-instruction]');
-    const stepDistance = container.querySelector('[data-nav-step-distance]');
-    const remaining = container.querySelector('[data-nav-remaining]');
-    const eta = container.querySelector('[data-nav-eta]');
-    const status = container.querySelector('[data-nav-status]');
-    const arrow = container.querySelector('[data-nav-turn-arrow]');
-
-    if (type === 'started' || type === 'rerouted' || type === 'step') {
-      hud.classList.add('is-active');
-      const step = detail.step ?? detail.route?.steps?.[0] ?? detail.nextStep;
-      if (instruction && step?.instruction) instruction.textContent = step.instruction;
-      if (status) status.textContent = type === 'rerouted' ? 'Yeni rota' : 'Navigasyon';
-      if (arrow) arrow.textContent = maneuverArrow(step?.instruction);
-    } else if (type === 'progress') {
-      hud.classList.add('is-active');
-      if (instruction && detail.step?.instruction) instruction.textContent = detail.step.instruction;
-      if (stepDistance && Number.isFinite(detail.distanceToStepMeters)) stepDistance.textContent = `${Math.max(0, Math.round(detail.distanceToStepMeters))} m`;
-      if (remaining && detail.routeDistanceMeters != null) remaining.textContent = `${Math.max(0, (detail.routeDistanceMeters / 1000)).toFixed(1).replace('.', ',')} km`;
-      if (eta && detail.routeDistanceMeters != null) {
-        const kmh = Math.max(25, detail.position?.speedKmh || 50);
-        const mins = Math.max(1, Math.round((detail.routeDistanceMeters / 1000) / kmh * 60));
-        eta.textContent = new Date(Date.now() + mins * 60000).toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' });
-      }
-    } else if (type === 'rerouting') {
-      hud.classList.add('is-active');
-      if (instruction) instruction.textContent = 'Rotadan çıktınız, yeni rota hesaplanıyor…';
-      if (status) status.textContent = 'Yeniden rota';
-    } else if (type === 'arrived' || type === 'stopped') {
-      hud.classList.remove('is-active');
-      if (instruction) instruction.textContent = type === 'arrived' ? 'Hedefe ulaştınız' : 'Rota durduruldu';
-    }
-  });
-
-  container.querySelector('[data-stop-guidance]')?.addEventListener('click', () => stopGuidance(true));
-  container._sdaGuidanceOff = guidanceOff;
-
   container.querySelector('[data-offline-region-toggle]')?.addEventListener('click', () => {
     openOfflineRegionPanel(map);
   });
@@ -303,15 +246,6 @@ export function initNavigationView() {
  * @param {string} category
  * @returns {string}
  */
-function maneuverArrow(instruction = '') {
-  const t = instruction.toLowerCase();
-  if (t.includes('u dönüş')) return '↶';
-  if (t.includes('sol')) return '↰';
-  if (t.includes('sağ')) return '↱';
-  if (t.includes('kavşak') || t.includes('göbek')) return '⟳';
-  return '↑';
-}
-
 function categoryLabel(category) {
   const labels = { fuel: 'Yakıt', parking: 'Otopark', service: 'Servis', hospital: 'Hastane' };
   return labels[category] ?? category;
