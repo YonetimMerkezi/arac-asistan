@@ -95,7 +95,7 @@ export function initNavigationView() {
         </div>
       </div>
       <button type="button" data-address-search class="sda-btn sda-btn--primary" style="width:100%; margin-bottom:8px;">
-        ${iconMarkup('search', { size: 18 })} Nereye Gidiyorsun? (Adres Ara)
+        ${iconMarkup('search', { size: 18 })} Nereye Gidiyorsun?
       </button>
       <button type="button" data-open-google-maps-general class="sda-nav-btn" style="width:100%; margin-bottom:8px; background:var(--sda-bg-elevated); flex-direction:row; justify-content:center; gap:8px;">
         ${iconMarkup('map', { size: 18 })}<span>Google Haritalar'ı Doğrudan Aç</span>
