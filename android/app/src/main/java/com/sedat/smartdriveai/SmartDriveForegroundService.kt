@@ -40,6 +40,34 @@ class SmartDriveForegroundService : Service() {
         const val NOTIFICATION_ID = 1001
         const val ACTION_UPDATE_STATUS = "com.sedat.smartdriveai.UPDATE_STATUS"
         const val EXTRA_STATUS_TEXT = "status_text"
+        const val VEHICLE_CHANNEL_ID = "smart_drive_ai_vehicle"
+        const val VEHICLE_NOTIFICATION_ID = 1002
+
+        fun showVehicleConnectedNotification(context: Context, deviceName: String) {
+            val manager = context.getSystemService(NotificationManager::class.java) ?: return
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                val channel = NotificationChannel(
+                    VEHICLE_CHANNEL_ID,
+                    "Araç bağlantısı",
+                    NotificationManager.IMPORTANCE_DEFAULT,
+                ).apply { description = "Araç/OBD bağlantısı bildirimi" }
+                manager.createNotificationChannel(channel)
+            }
+            val openIntent = context.packageManager.getLaunchIntentForPackage(context.packageName)
+            val pendingIntent = PendingIntent.getActivity(
+                context, 1002, openIntent,
+                PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
+            )
+            val notification = NotificationCompat.Builder(context, VEHICLE_CHANNEL_ID)
+                .setContentTitle("Smart Drive AI")
+                .setContentText("Araç bağlantısı hazır: $deviceName")
+                .setSmallIcon(R.drawable.ic_stat_notify)
+                .setAutoCancel(true)
+                .setContentIntent(pendingIntent)
+                .setPriority(NotificationCompat.PRIORITY_DEFAULT)
+                .build()
+            manager.notify(VEHICLE_NOTIFICATION_ID, notification)
+        }
     }
 
     private var wakeLock: PowerManager.WakeLock? = null

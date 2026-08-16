@@ -75,6 +75,14 @@ class BackgroundServicePlugin : Plugin() {
         call.resolve()
     }
 
+
+    @PluginMethod
+    fun notifyVehicleConnected(call: PluginCall) {
+        val deviceName = call.getString("deviceName") ?: "OBD cihazı"
+        SmartDriveForegroundService.showVehicleConnectedNotification(context, deviceName)
+        call.resolve()
+    }
+
     @PluginMethod
     fun stop(call: PluginCall) {
         context.stopService(Intent(context, SmartDriveForegroundService::class.java))
