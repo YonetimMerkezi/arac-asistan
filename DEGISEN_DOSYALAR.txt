@@ -1,0 +1,39 @@
+SMART DRIVE AI — GÜNCEL NAVİGASYON DOSYALARI
+
+Bu paket mevcut projenin gerçek klasör yapısına göre hazırlanmıştır.
+
+DEĞİŞEN / EKLENEN DOSYALAR
+1. www/src/ui/navigation-view.js
+2. www/src/ui/navigation-route-panel.js
+3. www/src/ui/navigation-tap-route.js
+4. www/src/maps/turn-by-turn.js
+5. www/src/trip/trip-recorder.js
+6. www/src/core/background-service.js
+7. www/src/core/app-init.js
+8. www/src/ui/styles/navigation.css  [YENİ]
+9. www/index.html
+10. android/app/src/main/java/com/sedat/smartdriveai/BackgroundServicePlugin.kt
+11. android/app/src/main/java/com/sedat/smartdriveai/SmartDriveForegroundService.kt
+
+ÖNEMLİ KLASÖR NOTU
+Mevcut projede www/src/ui/navigation/ klasörü yok. Navigasyon UI dosyaları www/src/ui/ altında düz isimlerle bulunuyor. Bu nedenle yeni bir navigation klasörü oluşturulmadı.
+
+NAVİGASYONDA GELENLER
+- Türkçe turn-by-turn HUD
+- Kalan mesafe / tahmini varış / durum göstergesi
+- Navigasyonu durdur butonu
+- Rota dışına çıkınca otomatik yeniden rota
+- Yeni rota harita üzerinde otomatik çizilir
+- Sesli yeniden rota bildirimi
+- Hedefe varış algılama
+- Açık/koyu tema uyumlu navigasyon CSS'i
+- Kısa/hareketsiz OBD bağlantılarında 0 km sürüş kaydı tutulmaması
+- 250 m altı ve 5 km/sa altı oturumların otomatik silinmesi
+- Android tarafında araç bağlantısı için ayrı bildirim
+- Mevcut BackgroundService yapısı kullanılır; yeni harici bildirim kütüphanesi eklenmez
+
+KULLANIM
+Dosyaları ZIP içindeki aynı yollarla mevcut projenin üzerine yazın.
+Ardından normal build/sync işlemini çalıştırın:
+  npm run build
+  npx cap sync android
