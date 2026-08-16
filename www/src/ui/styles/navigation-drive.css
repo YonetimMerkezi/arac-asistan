@@ -41,3 +41,5 @@
   .sda-drive-quick button { min-width:0; overflow:hidden; white-space:nowrap; }
   .sda-drive-map { height:44vh; min-height:280px; }
 }
+
+.sda-drive-map-placeholder{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:7px;background:linear-gradient(145deg,#18202a,#0d1218);color:#dfe7ef;font-size:32px;z-index:0}.sda-drive-map-placeholder strong{font-size:14px}.sda-drive-map-placeholder small{font-size:10px;color:#94a3b8}.sda-drive-map.leaflet-container .sda-drive-map-placeholder{display:none}
