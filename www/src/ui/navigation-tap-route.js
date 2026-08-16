@@ -154,7 +154,7 @@ async function drawTapRoute(map, statusEl) {
       statusEl.textContent = `${waypoints.length} durak: ${route.distanceKm.toFixed(1)} km, ~${Math.round(route.durationMinutes)} dk. Daha fazla durak eklemek için dokunmaya devam edin.`;
     }
 
-    startGuidance(route, { ...waypoints[waypoints.length - 1], label: 'Harita hedefi' });
+    startGuidance(route);
   } catch (error) {
     logWarn('navigation-tap-route', 'Çok noktalı rota çizilemedi', error);
     if (statusEl) statusEl.textContent = 'Rota hesaplanırken bir hata oluştu.';

@@ -18,7 +18,7 @@ import { getDrivingRoute } from '../maps/route-service.js';
 import { reverseGeocodeIlIlce } from '../maps/reverse-geocode.js';
 import { getFuelPrices } from '../maps/fuel-price-service.js';
 import { estimateAverageConsumption, estimateFuelCost } from '../fuel/route-cost-estimator.js';
-import { startGuidance, onGuidanceEvent } from '../maps/turn-by-turn.js';
+import { startGuidance } from '../maps/turn-by-turn.js';
 import { haversineDistanceKm } from '../trip/geo-utils.js';
 import { logWarn } from '../core/logger.js';
 
@@ -30,7 +30,6 @@ let alternateRouteLines = [];
 
 /** @type {(() => void)|null} Kalan mesafe/süre/varış saatini CANLI güncelleyen GPS aboneliği. */
 let unsubscribeLiveProgress = null;
-let unsubscribeGuidanceEvents = null;
 
 /**
  * Verilen (veya mevcut konumdan) noktadan verilen favori/aranan konuma
@@ -171,8 +170,7 @@ function selectRoute(map, routes, selectedIndex, destination, container) {
     setField(summaryEl, 'route-alternatives', routes.length > 1 ? `${routes.length - 1} tane (haritada dokun)` : 'yok');
   }
 
-  startGuidance(selected, destination);
-  bindGuidanceRouteUpdates(map, container);
+  startGuidance(selected);
   if (summaryEl) startLiveProgressTracking(selected, summaryEl);
 }
 
@@ -189,25 +187,6 @@ function selectRoute(map, routes, selectedIndex, destination, container) {
  * @param {import('../maps/route-service.js').RouteResult} route
  * @param {HTMLElement} summaryEl
  */
-function bindGuidanceRouteUpdates(map, container) {
-  unsubscribeGuidanceEvents?.();
-  unsubscribeGuidanceEvents = onGuidanceEvent((type, detail) => {
-    if (type !== 'rerouted' || !detail.route) return;
-    if (routeLine) map.removeLayer(routeLine);
-    alternateRouteLines.forEach((line) => map.removeLayer(line));
-    alternateRouteLines = [];
-    routeLine = L.polyline(detail.route.coordinates, { color: '#4FD8E0', weight: 5 }).addTo(map);
-    map.fitBounds(routeLine.getBounds(), { padding: [24, 24] });
-    const summaryEl = container.querySelector('[data-route-summary]');
-    if (summaryEl) {
-      setField(summaryEl, 'route-distance', `${detail.route.distanceKm.toFixed(1)} km`);
-      setField(summaryEl, 'route-duration', `${Math.round(detail.route.durationMinutes)} dk`);
-      setField(summaryEl, 'route-eta', new Date(Date.now() + detail.route.durationMinutes * 60000).toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' }));
-    }
-    if (summaryEl) startLiveProgressTracking(detail.route, summaryEl);
-  });
-}
-
 function startLiveProgressTracking(route, summaryEl) {
   unsubscribeLiveProgress?.();
 
