@@ -11,6 +11,9 @@ import { logError, logInfo } from './logger.js';
 
 const STORAGE_KEY = 'sda_dashboard_config';
 const DEFAULT_GAUGE_STYLE = 'analog-modern';
+const DEFAULT_GAUGE_SIZE = 'md';
+
+const VALID_GAUGE_SIZES = new Set(['sm', 'md', 'lg']);
 
 const VALID_GAUGE_STYLES = new Set([
   'analog-classic',
@@ -37,6 +40,10 @@ function normalizeGaugeStyle(style) {
   return LEGACY_STYLE_MAP[style] ?? (VALID_GAUGE_STYLES.has(style) ? style : DEFAULT_GAUGE_STYLE);
 }
 
+function normalizeGaugeSize(size) {
+  return VALID_GAUGE_SIZES.has(size) ? size : DEFAULT_GAUGE_SIZE;
+}
+
 function normalizeWidget(widget) {
   return {
     pid: String(widget?.pid ?? ''),
@@ -44,6 +51,7 @@ function normalizeWidget(widget) {
       ? null
       : Number(widget.colorHue),
     gaugeStyle: normalizeGaugeStyle(widget?.gaugeStyle),
+    gaugeSize: normalizeGaugeSize(widget?.gaugeSize),
   };
 }
 
@@ -57,6 +65,7 @@ let current = {
     pid,
     colorHue: null,
     gaugeStyle: DEFAULT_GAUGE_STYLE,
+    gaugeSize: DEFAULT_GAUGE_SIZE,
   })),
 };
 
@@ -94,6 +103,17 @@ export async function setWidgetColor(pid, colorHue) {
   current = {
     widgets: current.widgets.map((w) => (
       w.pid === pid ? { ...w, colorHue: Number.isFinite(Number(colorHue)) ? Number(colorHue) : null } : w
+    )),
+  };
+  await persist();
+  notify();
+}
+
+export async function setWidgetSize(pid, gaugeSize) {
+  const normalized = normalizeGaugeSize(gaugeSize);
+  current = {
+    widgets: current.widgets.map((w) => (
+      w.pid === pid ? { ...w, gaugeSize: normalized } : w
     )),
   };
   await persist();
