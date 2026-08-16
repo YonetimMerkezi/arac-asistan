@@ -7,10 +7,9 @@
 
   <link rel="stylesheet" href="./src/ui/styles/theme.css" />
   <link rel="stylesheet" href="./src/ui/styles/base.css" />
+  <link rel="stylesheet" href="./src/ui/styles/navigation-drive.css" />
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css" />
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200" />
-  <link rel="stylesheet" href="./src/ui/styles/radar-safety.css">
-  <link rel="stylesheet" href="./src/ui/styles/navigation-tracking.css">
 </head>
 <body>
   <!--
@@ -40,6 +39,10 @@
         <!-- Harita/butonlar navigation-view.js tarafından JS ile inşa edilir (Faz 5). -->
       </section>
 
+      <section class="sda-view" data-view="navigation-drive" hidden>
+        <!-- Ayrı sürüş navigasyonu: navigation-drive-view.js -->
+      </section>
+
       <section class="sda-view" data-view="fuel" hidden>
         <!-- Formlar/listeler fuel-view.js tarafından JS ile inşa edilir (Faz 6). -->
       </section>
@@ -57,6 +60,7 @@
       <button class="sda-nav-btn" type="button" data-nav-target="dashboard">Panel</button>
       <button class="sda-nav-btn" type="button" data-nav-target="trip">Yolculuk</button>
       <button class="sda-nav-btn" type="button" data-nav-target="navigation">Harita</button>
+      <button class="sda-nav-btn" type="button" data-nav-target="navigation-drive">Navigasyon</button>
       <button class="sda-nav-btn" type="button" data-nav-target="fuel">Yakıt</button>
       <button class="sda-nav-btn" type="button" data-nav-target="diagnostics">Arıza</button>
       <button class="sda-nav-btn" type="button" data-nav-target="settings">Ayarlar</button>
@@ -66,6 +70,5 @@
   <!-- Kaynak: src/core/app-init.js — bare npm import'ları çözmek için
        esbuild ile paketlenir (bkz. build.js). Geliştirirken `npm run watch`. -->
   <script type="module" src="./dist/app.bundle.js"></script>
-  <script type="module" src="./src/radar/radar-safety-controller.js"></script>
 </body>
 </html>
