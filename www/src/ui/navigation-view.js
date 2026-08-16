@@ -29,7 +29,6 @@ import { reverseGeocodeIlIlce } from '../maps/reverse-geocode.js';
 import { getFuelPrices } from '../maps/fuel-price-service.js';
 import { drawRouteTo, openGoogleMapsGeneral } from './navigation-route-panel.js';
 import { bindLiveSpeedLimitCard, bindFullscreenToggle, bindSatelliteToggle, renderVehicleMarker } from './navigation-map-overlay.js';
-import { offlineTileLayer } from '../maps/offline-tile-layer.js';
 import { openOfflineRegionPanel } from './offline-region-panel.js';
 import { bindTapRouteMode } from './navigation-tap-route.js';
 import { openAddressSearchModal } from './components/address-search-modal.js';
@@ -160,21 +159,50 @@ export function initNavigationView() {
     <div data-price-table style="margin-top:16px;"></div>
   `;
 
-  map = L.map(container.querySelector('[data-map]')).setView(DEFAULT_CENTER, 6);
+  const mapElement = container.querySelector('[data-map]');
+  if (!mapElement) {
+    logWarn('navigation-view', 'Harita elementi bulunamadı');
+    return;
+  }
 
-  // DÜZELTME: Harita bazen kısmen GRİ/BOŞ görünüyordu - Leaflet, konteynerin
-  // boyutunu SAYFA DÜZENİ TAM OTURMADAN ÖNCE ölçüyordu (üstteki yeni harita
-  // düğmeleri sayfanın toplam yüksekliğini değiştirdiği için), bu yüzden
-  // döşeme (tile) ızgarasını olduğundan küçük hesaplayıp kenarları boş
-  // bırakıyordu. Düzen kesinlikle oturduktan sonra yeniden ölçmeye
-  // ZORLANIYOR.
-  setTimeout(() => map?.invalidateSize(), 200);
-  setTimeout(() => map?.invalidateSize(), 600);
+  // Leaflet'i gizli bir view içinde oluşturmak yerine mevcut DOM ölçüsünü
+  // zorla kullan ve görünür olduğunda tekrar ölç. Harita karolarında da
+  // IndexedDB önbelleği başarısız olduğunda boş kalmaması için doğrudan
+  // standart OSM TileLayer kullanılır.
+  map = L.map(mapElement, {
+    center: DEFAULT_CENTER,
+    zoom: 6,
+    zoomControl: true,
+    attributionControl: true,
+  });
 
-  const streetLayer = offlineTileLayer({
-    attribution: '© OpenStreetMap katkıda bulunanlar',
-    maxZoom: 19,
-  }).addTo(map);
+  const streetLayer = L.tileLayer(
+    'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
+    {
+      attribution: '© OpenStreetMap katkıda bulunanlar',
+      maxZoom: 19,
+      crossOrigin: true,
+    },
+  ).addTo(map);
+
+  streetLayer.on('tileerror', () => {
+    const statusEl = container.querySelector('[data-status]');
+    if (statusEl && !statusEl.textContent) {
+      statusEl.textContent = 'Harita karoları yüklenemedi. İnternet bağlantınızı kontrol edin.';
+    }
+  });
+
+  // Görünürlük/yerleşim tamamlandıktan sonra Leaflet'e gerçek ölçüyü yeniden
+  // hesaplat. Bu çağrı Android WebView'da özellikle önemlidir.
+  const resizeMap = () => {
+    try {
+      map?.invalidateSize(true);
+    } catch {}
+  };
+  requestAnimationFrame(resizeMap);
+  setTimeout(resizeMap, 100);
+  setTimeout(resizeMap, 350);
+  setTimeout(resizeMap, 800);
 
   bindSatelliteToggle(container, map, streetLayer);
 
