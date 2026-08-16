@@ -64,12 +64,6 @@
 
   /* --- Yay (gauge arc) geometrisi: tüm gösterge kartlarında ortak --- */
   --sda-arc-track: rgba(255, 255, 255, 0.06);
-  --sda-gauge-ring: rgba(255,255,255,.035);
-  --sda-gauge-track: rgba(255,255,255,.07);
-  --sda-gauge-center: #11151A;
-  --sda-gauge-surface: #1B2027;
-  --sda-gauge-surface-2: #14171C;
-  --sda-gauge-highlight: rgba(255,255,255,.04);
   --sda-arc-stroke-width: 8;
 
   /* --- Boşluk / köşe / gölge --- */
@@ -116,12 +110,6 @@
   --sda-accent-2-soft: hsl(var(--sda-accent-hue-2) 60% 40% / 0.12);
 
   --sda-arc-track: rgba(20, 23, 28, 0.08);
-  --sda-gauge-ring: rgba(20,23,28,.08);
-  --sda-gauge-track: rgba(20,23,28,.10);
-  --sda-gauge-center: #FFFFFF;
-  --sda-gauge-surface: #FFFFFF;
-  --sda-gauge-surface-2: #F6F7F9;
-  --sda-gauge-highlight: rgba(255,255,255,.75);
   --sda-shadow-elevated: 0 8px 24px rgba(20, 23, 28, 0.12);
 }
 
@@ -142,12 +130,6 @@
     --sda-text-muted: #565E6C;
     --sda-text-faint: #8B93A1;
     --sda-arc-track: rgba(20, 23, 28, 0.08);
-    --sda-gauge-ring: rgba(20,23,28,.08);
-    --sda-gauge-track: rgba(20,23,28,.10);
-    --sda-gauge-center: #FFFFFF;
-    --sda-gauge-surface: #FFFFFF;
-    --sda-gauge-surface-2: #F6F7F9;
-    --sda-gauge-highlight: rgba(255,255,255,.75);
     --sda-shadow-elevated: 0 8px 24px rgba(20, 23, 28, 0.12);
   }
 }
@@ -311,11 +293,3 @@ body.sda-fullscreen-nav [data-view="navigation"] [data-gps-detail] {
     hsl(var(--sda-accent-hue) 60% 96%) 100%
   );
 }
-
-
-/* Gösterge boyutları: kullanıcı her widget için ayrı seçebilir. */
-.sda-gauge-card--sm { min-height: 180px; }
-.sda-gauge-card--md { min-height: 230px; }
-.sda-gauge-card--lg { min-height: 360px; }
-.sda-gauge-card--sm sda-gauge { transform: scale(.94); transform-origin: top center; margin-bottom: -8px; }
-.sda-gauge-card--lg sda-gauge { width:100%; }
