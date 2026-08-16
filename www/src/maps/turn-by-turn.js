@@ -1,117 +1,189 @@
 /**
  * turn-by-turn.js
- * ---------------------------------------------------------------------------
- * Aktif rota için basit sesli dönüş rehberliği.
+ * Smart Drive AI — Türkçe dönüş rehberliği + rota dışı otomatik yeniden rota.
  *
- * route-service.js'in döndürdüğü `steps` dizisini (OSRM manevralarından
- * Türkçeye çevrilmiş talimatlar) GPS akışıyla karşılaştırır: araç bir
- * sonraki adımın konumuna yeterince yaklaşınca o talimat seslendirilir ve
- * bir sonraki adıma geçilir.
- *
- * DÜRÜSTLÜK NOTU: Bu YENİDEN YÖNLENDİRME (rota dışına çıkınca otomatik
- * yeni rota hesaplama) YAPMAZ - yalnızca mevcut rotanın adımlarını sırayla
- * seslendirir. Kullanıcı rotadan büyük ölçüde saparsa rehberlik "senkron
- * dışı" kalabilir; bu bilinen bir sınırlamadır, sessizce farklı davranmaz.
- * ---------------------------------------------------------------------------
+ * Ücretsiz altyapı: mevcut route-service.js / OSRM.
+ * GPS: core/gps-tracker.js.
  */
-
 import { onPosition } from '../core/gps-tracker.js';
 import { haversineDistanceKm } from '../trip/geo-utils.js';
+import { getDrivingRoute } from './route-service.js';
 import { speak } from '../voice/tts.js';
-import { logInfo } from '../core/logger.js';
+import { logInfo, logWarn } from '../core/logger.js';
 
-/** @type {number} Bir adımın konumuna bu mesafede (metre) yaklaşınca ERKEN (ön) uyarı seslendirilir - "200 metre sonra sola dönün" gibi. */
-const EARLY_ANNOUNCE_RADIUS_METERS = 200;
+const EARLY_ANNOUNCE_RADIUS_METERS = 220;
+const NEAR_ANNOUNCE_RADIUS_METERS = 24;
+const OFF_ROUTE_RADIUS_METERS = 85;
+const REROUTE_COOLDOWN_MS = 9000;
+const ARRIVAL_RADIUS_METERS = 28;
 
-/** @type {number} Bir adımın konumuna bu mesafede (metre) yaklaşınca SON (dönüş anı) talimatı seslendirilir. */
-const NEAR_ANNOUNCE_RADIUS_METERS = 20;
-
-/** @type {import('./route-service.js').RouteStep[]} */
-let activeSteps = [];
-
-/** @type {number} Sıradaki (henüz son talimatı seslendirilmemiş) adımın indeksi. */
+let activeRoute = null;
+let destination = null;
 let nextStepIndex = 0;
-
-/** @type {boolean} Sıradaki adım için ERKEN uyarı zaten söylendi mi (aynı adım için iki kez söylenmesin). */
-let earlyAnnouncedForCurrentStep = false;
-
-/** @type {(() => void)|null} */
+let earlyAnnounced = false;
 let unsubscribe = null;
+let lastRerouteAt = 0;
+let offRouteHits = 0;
+const listeners = new Set();
 
-/**
- * Verilen rota için sesli rehberliği başlatır. Zaten aktif bir rehberlik
- * varsa (ör. kullanıcı yeni bir rota seçti) önce onu durdurur.
- * @param {import('./route-service.js').RouteResult} route
- */
-export function startGuidance(route) {
-  stopGuidance();
+function emit(type, detail = {}) {
+  listeners.forEach((fn) => { try { fn(type, detail); } catch {} });
+  window.dispatchEvent(new CustomEvent(`sda:navigation:${type}`, { detail }));
+}
 
-  activeSteps = route.steps ?? [];
+export function onGuidanceEvent(callback) {
+  listeners.add(callback);
+  return () => listeners.delete(callback);
+}
+
+export function getGuidanceState() {
+  return {
+    active: Boolean(activeRoute),
+    destination,
+    nextStepIndex,
+    nextStep: activeRoute?.steps?.[nextStepIndex] ?? null,
+    route: activeRoute,
+  };
+}
+
+export function startGuidance(route, target = null) {
+  stopGuidance(false);
+  activeRoute = route;
+  destination = target ? { lat: Number(target.lat), lon: Number(target.lon), label: target.label ?? 'Hedef' } : null;
   nextStepIndex = 0;
-  earlyAnnouncedForCurrentStep = false;
-  if (activeSteps.length === 0) return;
+  earlyAnnounced = false;
+  offRouteHits = 0;
+  lastRerouteAt = 0;
 
+  if (!activeRoute?.steps?.length) return;
   unsubscribe = onPosition(handlePosition);
-  logInfo('turn-by-turn', `Sesli rehberlik başladı (${activeSteps.length} adım)`);
+  emit('started', getGuidanceState());
 
-  // İlk adım genelde "Yola çıkın" - hemen seslendirilir, GPS'in ilk adıma
-  // "yaklaşmasını" beklemeye gerek yok (zaten başlangıç noktasındayız).
-  if (activeSteps[0]) {
-    void speak(activeSteps[0].instruction);
+  const first = activeRoute.steps[0];
+  if (first?.instruction) {
+    void speak(first.instruction);
     nextStepIndex = 1;
   }
 }
 
-/**
- * Aktif rehberliği durdurur (yeni rota seçildiğinde, Harita ekranından
- * çıkıldığında veya hedefe ulaşılınca çağrılır).
- */
-export function stopGuidance() {
+export function stopGuidance(announce = false) {
   unsubscribe?.();
   unsubscribe = null;
-  activeSteps = [];
+  const hadRoute = Boolean(activeRoute);
+  activeRoute = null;
+  destination = null;
   nextStepIndex = 0;
-  earlyAnnouncedForCurrentStep = false;
+  earlyAnnounced = false;
+  offRouteHits = 0;
+  if (hadRoute) {
+    if (announce) void speak('Navigasyon durduruldu.');
+    emit('stopped');
+  }
 }
 
-/**
- * Bir talimatı "ön uyarı" biçimine çevirir - ör. "Sola dönün" -> "200 metre
- * sonra sola dönün". Yalnızca ilk harfi küçültülür (talimat cümle içine
- * gömülüyor, büyük harfle başlamamalı).
- * @param {string} instruction
- * @returns {string}
- */
-function toEarlyInstruction(instruction) {
-  const lowered = instruction.charAt(0).toLowerCase() + instruction.slice(1);
-  return `${EARLY_ANNOUNCE_RADIUS_METERS} metre sonra ${lowered}`;
-}
+async function handlePosition(position) {
+  if (!activeRoute) return;
 
-/**
- * @param {import('../core/gps-tracker.js').LivePosition} position
- */
-function handlePosition(position) {
-  if (nextStepIndex >= activeSteps.length) {
-    stopGuidance(); // Son adım da seslendirildi - rehberlik bitti.
+  if (destination) {
+    const toDestination = haversineDistanceKm(
+      position.latitude, position.longitude, destination.lat, destination.lon,
+    ) * 1000;
+    if (toDestination <= ARRIVAL_RADIUS_METERS) {
+      void speak('Hedefinize ulaştınız.');
+      emit('arrived', { destination, position });
+      stopGuidance(false);
+      return;
+    }
+  }
+
+  const routeDistance = distanceFromRoute(position, activeRoute.coordinates);
+  if (routeDistance > OFF_ROUTE_RADIUS_METERS) {
+    offRouteHits += 1;
+  } else {
+    offRouteHits = 0;
+  }
+
+  if (offRouteHits >= 2 && destination && Date.now() - lastRerouteAt >= REROUTE_COOLDOWN_MS) {
+    await reroute(position);
     return;
   }
 
-  const step = activeSteps[nextStepIndex];
+  const step = activeRoute.steps?.[nextStepIndex];
+  if (!step?.location) {
+    emit('progress', { position, routeDistanceMeters: routeDistance });
+    return;
+  }
+
   const distanceMeters = haversineDistanceKm(
     position.latitude, position.longitude, step.location[0], step.location[1],
   ) * 1000;
 
+  emit('progress', {
+    position,
+    routeDistanceMeters: routeDistance,
+    distanceToStepMeters: distanceMeters,
+    step,
+    stepIndex: nextStepIndex,
+  });
+
   if (distanceMeters <= NEAR_ANNOUNCE_RADIUS_METERS) {
-    // Dönüş anı geldi - asıl talimat (kısa, doğrudan) seslendirilir.
     void speak(step.instruction);
     nextStepIndex += 1;
-    earlyAnnouncedForCurrentStep = false;
+    earlyAnnounced = false;
+    emit('step', { step, stepIndex: nextStepIndex });
     return;
   }
 
-  if (!earlyAnnouncedForCurrentStep && distanceMeters <= EARLY_ANNOUNCE_RADIUS_METERS) {
-    // Dönüşten önce bir kez ön uyarı - gerçek dönüş talimatıyla KARIŞTIRILMASIN
-    // diye farklı cümle kalıbı kullanılır ("200 metre sonra ...").
-    void speak(toEarlyInstruction(step.instruction));
-    earlyAnnouncedForCurrentStep = true;
+  if (!earlyAnnounced && distanceMeters <= EARLY_ANNOUNCE_RADIUS_METERS) {
+    void speak(`${Math.max(20, Math.round(distanceMeters / 10) * 10)} metre sonra ${lowercaseFirst(step.instruction)}`);
+    earlyAnnounced = true;
   }
+}
+
+async function reroute(position) {
+  if (!destination || !activeRoute) return;
+  lastRerouteAt = Date.now();
+  offRouteHits = 0;
+  emit('rerouting', { position, destination });
+  void speak('Rotadan çıktınız. Yeni rota hesaplanıyor.');
+
+  try {
+    const routes = await getDrivingRoute(
+      { lat: position.latitude, lon: position.longitude },
+      { lat: destination.lat, lon: destination.lon },
+    );
+    if (!routes?.length) throw new Error('Yeni rota bulunamadı.');
+
+    const selected = routes.reduce((best, candidate) => (
+      candidate.distanceKm < best.distanceKm ? candidate : best
+    ), routes[0]);
+
+    activeRoute = selected;
+    nextStepIndex = 0;
+    earlyAnnounced = false;
+    emit('rerouted', { route: selected, destination });
+
+    const first = selected.steps?.[0];
+    if (first?.instruction) {
+      void speak(`Yeni rota hazır. ${first.instruction}`);
+      nextStepIndex = 1;
+    }
+  } catch (error) {
+    logWarn('turn-by-turn', 'Otomatik yeniden rota başarısız', error);
+    emit('reroute-error', { error });
+  }
+}
+
+function distanceFromRoute(position, coordinates = []) {
+  let minKm = Infinity;
+  for (const [lat, lon] of coordinates) {
+    const km = haversineDistanceKm(position.latitude, position.longitude, lat, lon);
+    if (km < minKm) minKm = km;
+  }
+  return Number.isFinite(minKm) ? minKm * 1000 : Infinity;
+}
+
+function lowercaseFirst(text) {
+  if (!text) return '';
+  return text.charAt(0).toLowerCase() + text.slice(1);
 }
