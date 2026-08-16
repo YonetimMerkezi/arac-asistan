@@ -24,12 +24,19 @@ import {
 /** @type {number[]} Renk seçici için sunulan ön ayar tonlar (0-360). */
 const COLOR_PRESETS = [28, 4, 48, 142, 199, 291, 335, 0];
 
-/** @type {{value: 'arc'|'needle'|'digital'|'bar', label: string}[]} Seçilebilir gösterge tipleri - bkz. ui/components/gauge.js. */
+/** @type {{value: string, label: string}[]} Seçilebilir gösterge tipleri - bkz. ui/components/gauge.js. */
 const GAUGE_STYLE_OPTIONS = [
-  { value: 'arc', label: 'Yay (Modern)' },
-  { value: 'needle', label: 'Kadran (İbreli)' },
-  { value: 'digital', label: 'Dijital Gösterge' },
-  { value: 'bar', label: 'Bar Göstergesi' },
+  { value: 'analog-classic', label: 'Analog Klasik' },
+  { value: 'analog-modern', label: 'Analog Modern' },
+  { value: 'digital-card', label: 'Dijital Kart' },
+  { value: 'digital-modern', label: 'Dijital Modern' },
+  { value: 'hybrid', label: 'Hibrit' },
+  { value: 'compact', label: 'Kompakt Panel' },
+  // Eski kayıtlar için geriye dönük uyumluluk seçenekleri.
+  { value: 'arc', label: 'Eski Yay' },
+  { value: 'needle', label: 'Eski İbreli' },
+  { value: 'digital', label: 'Eski Dijital' },
+  { value: 'bar', label: 'Eski Bar' },
 ];
 
 /** @type {(() => HTMLElement|null|undefined)|null} Canlı içerik konteynerini HER ZAMAN taze alan getter - refreshEditModePanel() bunu kullanır. */
@@ -148,7 +155,7 @@ function bindEditModeEvents(list) {
       const pid = button.getAttribute('data-open-style-picker');
       const config = getDashboardConfig();
       const instance = config.widgets.find((w) => w.pid === pid);
-      openGaugeStylePicker(pid, instance?.gaugeStyle ?? 'arc', async (style) => {
+      openGaugeStylePicker(pid, instance?.gaugeStyle ?? 'analog-modern', async (style) => {
         await setWidgetStyle(pid, style);
         refreshEditModePanel();
       });
@@ -173,11 +180,11 @@ function refreshEditModePanel() {
 }
 
 /**
- * @param {'arc'|'needle'|'digital'|'bar'|null|undefined} style
+ * @param {string|null|undefined} style
  * @returns {string}
  */
 function gaugeStyleLabel(style) {
-  return GAUGE_STYLE_OPTIONS.find((o) => o.value === (style ?? 'arc'))?.label ?? 'Yay (Modern)';
+  return GAUGE_STYLE_OPTIONS.find((o) => o.value === (style ?? 'analog-modern'))?.label ?? 'Yay (Modern)';
 }
 
 /**
@@ -185,8 +192,8 @@ function gaugeStyleLabel(style) {
  * <sda-gauge> önizlemesiyle (örnek %65 dolulukta) listelenir, tıklanan
  * seçenek hemen kaydedilir ve alt sayfa KAPANIR.
  * @param {string} pid
- * @param {'arc'|'needle'|'digital'|'bar'} currentStyle
- * @param {(style: 'arc'|'needle'|'digital'|'bar') => void} onSelect
+ * @param {string} currentStyle
+ * @param {(style: string) => void} onSelect
  */
 function openGaugeStylePicker(pid, currentStyle, onSelect) {
   const bodyHtml = `
