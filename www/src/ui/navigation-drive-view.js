@@ -22,14 +22,13 @@ function getGps() {
 
 function getContainer() {
   return document.getElementById('navigation-drive-map') ||
-         document.querySelector('[data-navigation-map]') ||
-         document.querySelector('#view-navigation .navigation-map') ||
-         document.querySelector('#view-navigation .map-container');
+         document.querySelector('[data-view="navigation-drive"] [data-navigation-map]') ||
+         document.querySelector('[data-view="navigation-drive"] .navigation-map') ||
+         document.querySelector('[data-view="navigation-drive"] .map-container');
 }
 
 function ensureLayout() {
-  const view = document.getElementById('view-navigation') ||
-               document.querySelector('[data-view="navigation"]');
+  const view = document.querySelector('[data-view="navigation-drive"]');
   if (!view) return null;
 
   if (!view.querySelector('.sda-nav-real')) {
