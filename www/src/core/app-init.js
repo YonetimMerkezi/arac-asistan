@@ -54,7 +54,7 @@ import { initSettingsView } from '../ui/settings-view.js';
 import { initFavoriteBrandsStore } from './favorite-brands-store.js';
 import { initStationBrandStore } from '../maps/station-brand-store.js';
 import { initFuelStationCache } from '../maps/fuel-station-cache.js';
-import { initBackgroundService } from './background-service.js';
+import { initBackgroundService, notifyVehicleConnected } from './background-service.js';
 
 /**
  * @type {boolean} ELM327 başlatma dizisinin şu anki bağlantı için zaten
@@ -136,6 +136,7 @@ async function bootstrap() {
     onBluetoothStateChange((state) => {
       if (state.status === 'connected' && !elm327InitializedForThisConnection) {
         elm327InitializedForThisConnection = true;
+        void notifyVehicleConnected(state.deviceName ?? state.deviceAddress);
         void initializeElm327AndVoice();
       } else if (state.status !== 'connected') {
         elm327InitializedForThisConnection = false;

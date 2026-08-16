@@ -31,6 +31,7 @@ const STORAGE_KEY = 'sda_background_service_enabled';
  * @property {(opts: {statusText: string}) => Promise<{started: boolean}>} start
  * @property {(opts: {statusText: string}) => Promise<void>} updateStatus
  * @property {() => Promise<void>} stop
+ * @property {(opts: {deviceName?: string}) => Promise<void>} notifyVehicleConnected
  * @property {(opts: {enabled: boolean}) => Promise<void>} setAutoStartOnBoot
  * @property {() => Promise<{enabled: boolean}>} isAutoStartOnBoot
  */
@@ -117,6 +118,21 @@ export async function stopBackgroundService() {
 /**
  * @returns {boolean}
  */
+
+/**
+ * Araç bağlantısı kurulduğunda Android'e kısa, görünür bir bildirim gönderir.
+ * Arka plan servisi kapalı olsa bile izin varsa native bildirim kanalı kullanılabilir.
+ * @param {string} [deviceName]
+ * @returns {Promise<void>}
+ */
+export async function notifyVehicleConnected(deviceName) {
+  try {
+    await BackgroundService.notifyVehicleConnected({ deviceName: deviceName ?? undefined });
+  } catch (error) {
+    logError('background-service', 'Araç bağlantı bildirimi gönderilemedi', error);
+  }
+}
+
 export function isBackgroundServiceRunning() {
   return isRunning;
 }
