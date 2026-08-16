@@ -20,7 +20,7 @@
 import { onStateChange as onBluetoothStateChange } from '../bluetooth/bluetooth-manager.js';
 import { onPosition } from '../core/gps-tracker.js';
 import { queryPid } from '../obd/elm327.js';
-import { createTrip, updateTripSummary, addTripPoint } from '../data/trip-repository.js';
+import { createTrip, updateTripSummary, addTripPoint, deleteTrip } from '../data/trip-repository.js';
 import { haversineDistanceKm } from './geo-utils.js';
 import { logError, logInfo, logWarn } from '../core/logger.js';
 
@@ -29,6 +29,10 @@ const MIN_POINT_INTERVAL_MS = 4000;
 
 /** @type {number} MAF örnekleme aralığı (ms). */
 const FUEL_SAMPLE_INTERVAL_MS = 3000;
+
+/** Bağlantı açıldı ama araç anlamlı şekilde hareket etmediyse kayıt tutulmaz. */
+const MIN_SAVE_DISTANCE_KM = 0.25;
+const MIN_SAVE_SPEED_KMH = 5;
 
 /** @type {number} Benzin için varsayılan stokiyometrik hava/yakıt oranı (kütlece). */
 const STOICHIOMETRIC_AFR = 14.7;
@@ -155,6 +159,19 @@ async function stopTrip() {
   const durationS = Math.round((Date.now() - finished.startedAt) / 1000);
   const durationHours = durationS / 3600;
   const avgSpeedKmh = durationHours > 0 ? finished.distanceKm / durationHours : 0;
+
+  // OBD bağlandı diye her oturumu yolculuk kabul etme. Araç garajda,
+  // park halinde veya sadece veri testi için bağlandıysa DB'ye 0 km kayıt
+  // yazılması engellenir. En az 250 m VEYA anlamlı hareket görülmüş olmalı.
+  if (finished.distanceKm < MIN_SAVE_DISTANCE_KM && finished.maxSpeedKmh < MIN_SAVE_SPEED_KMH) {
+    try {
+      await deleteTrip(finished.tripId);
+      logInfo('trip-recorder', `Hareketsiz/çok kısa oturum silindi (id: ${finished.tripId}, ${round2(finished.distanceKm)} km)`);
+    } catch (error) {
+      logError('trip-recorder', 'Kısa yolculuk kaydı silinemedi', error);
+    }
+    return;
+  }
 
   try {
     await updateTripSummary(finished.tripId, {
