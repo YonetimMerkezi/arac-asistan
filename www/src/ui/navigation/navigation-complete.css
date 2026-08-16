@@ -1,0 +1,64 @@
+
+/* Smart Drive AI Navigation COMPLETE */
+.sda-nav.is-navigating .sda-nav__map { min-height: 58dvh; }
+
+.sda-nav__turn-v3 {
+  position: absolute;
+  left: 12px;
+  right: 58px;
+  top: 12px;
+  z-index: 1300;
+  display: none;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 14px;
+  border-radius: 18px;
+  background: rgba(11,14,19,.94);
+  color: #fff;
+  border: 1px solid rgba(255,255,255,.13);
+  box-shadow: 0 15px 35px rgba(0,0,0,.3);
+  backdrop-filter: blur(15px);
+}
+.sda-nav.is-navigating .sda-nav__turn-v3 { display: flex; }
+.sda-nav__turn-v3 .arrow { font-size: 30px; line-height: 1; }
+.sda-nav__turn-v3 strong { display:block; font-size:16px; }
+.sda-nav__turn-v3 small { color:#aab2bc; display:block; margin-top:3px; }
+
+.sda-nav__eta {
+  display: grid;
+  grid-template-columns: repeat(3,1fr);
+  gap: 7px;
+  margin-top: 10px;
+}
+.sda-nav__eta > div {
+  text-align:center;
+  padding: 10px 5px;
+  border-radius: 13px;
+  background: rgba(127,127,127,.08);
+}
+.sda-nav__eta strong { display:block; font-size:16px; }
+.sda-nav__eta span { font-size:9px; color:var(--sda-text-muted,#9aa2ad); }
+
+.sda-nav__fuel-alert {
+  display:none;
+  margin-top:10px;
+  padding:10px 12px;
+  border-radius:13px;
+  background:rgba(255,165,0,.1);
+  border:1px solid rgba(255,165,0,.2);
+  font-size:12px;
+}
+.sda-nav__fuel-alert.is-visible { display:block; }
+
+.sda-nav__offline {
+  display:flex;
+  align-items:center;
+  gap:7px;
+  margin-top:8px;
+  color:var(--sda-text-muted,#9aa2ad);
+  font-size:10px;
+}
+.sda-nav__offline-dot {
+  width:7px;height:7px;border-radius:50%;
+  background:#6bcf73;
+}
