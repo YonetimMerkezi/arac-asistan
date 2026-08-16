@@ -11,9 +11,20 @@
  */
 
 import { logWarn } from '../core/logger.js';
+import { saveRouteCache, getCachedRoute } from './route-cache.js';
 
 /** @type {string} OSRM halka açık sunucusu (yalnızca "driving" profili). */
-const OSRM_ENDPOINT = 'https://router.project-osrm.org/route/v1/driving';
+const DEFAULT_OSRM_ENDPOINT = 'https://router.project-osrm.org/route/v1/driving';
+let osrmEndpoint = DEFAULT_OSRM_ENDPOINT;
+
+export function setRouteServiceEndpoint(endpoint) {
+  const clean = String(endpoint || '').replace(/\/$/, '');
+  if (clean) osrmEndpoint = clean.endsWith('/route/v1/driving') ? clean : `${clean}/route/v1/driving`;
+}
+
+export function getRouteServiceEndpoint() {
+  return osrmEndpoint;
+}
 
 /**
  * @typedef {Object} RouteStep
@@ -41,7 +52,7 @@ export async function getMultiPointRoute(waypoints) {
   if (waypoints.length < 2) return null;
 
   const coords = waypoints.map((w) => `${w.lon},${w.lat}`).join(';');
-  const url = `${OSRM_ENDPOINT}/${coords}?overview=full&geometries=geojson&steps=true`;
+  const url = `${osrmEndpoint}/${coords}?overview=full&geometries=geojson&steps=true`;
 
   try {
     const response = await fetch(url);
@@ -67,8 +78,8 @@ export async function getMultiPointRoute(waypoints) {
  * @param {{lat: number, lon: number}} to
  * @returns {Promise<RouteResult[]|null>} İlk eleman EN İYİ rota - boşsa null.
  */
-export async function getDrivingRoute(from, to) {
-  const url = `${OSRM_ENDPOINT}/${from.lon},${from.lat};${to.lon},${to.lat}`
+export async function getDrivingRoute(from, to, options = {}) {
+  const url = `${osrmEndpoint}/${from.lon},${from.lat};${to.lon},${to.lat}`
     + '?overview=full&geometries=geojson&alternatives=true&steps=true';
 
   try {
@@ -82,7 +93,11 @@ export async function getDrivingRoute(from, to) {
     const routes = data.routes ?? [];
     if (routes.length === 0) return null;
 
-    return routes.map(parseRoute);
+    const parsedRoutes = routes.map(parseRoute);
+    if (options.cache !== false) {
+      await saveRouteCache({ lat: to.lat, lon: to.lon, label: options.destinationLabel ?? '' }, parsedRoutes[0]);
+    }
+    return parsedRoutes;
   } catch (error) {
     logWarn('route-service', 'Rota alınamadı (muhtemelen internet yok)', error);
     return null;
@@ -156,4 +171,14 @@ function translateManeuver(maneuver) {
 
   const direction = maneuver.modifier ? MANEUVER_DIRECTIONS[maneuver.modifier] : null;
   return direction ? `${direction.charAt(0).toUpperCase() + direction.slice(1)} ${verb}` : null;
+}
+
+
+/**
+ * İnternet yoksa daha önce kaydedilmiş hedef rotasını döndürür.
+ * Kaydedilmiş rota yoksa null döner; uygulama bunu kullanıcıya açıkça bildirir.
+ */
+export async function getCachedDrivingRoute(to) {
+  const cached = await getCachedRoute(to);
+  return cached ? [cached] : null;
 }
