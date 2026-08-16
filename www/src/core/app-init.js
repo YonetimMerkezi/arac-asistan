@@ -46,6 +46,7 @@ import { initSpeedWarning } from '../maps/speed-warning.js';
 import { initFavoritesStore } from '../maps/favorites-store.js';
 import { initAverageSpeedCorridor } from '../maps/average-speed-corridor.js';
 import { initNavigationView } from '../ui/navigation-view.js';
+import { initNavigationDriveView } from '../ui/navigation-drive-view.js';
 import { initFuelView } from '../ui/fuel-view.js';
 import { checkMaintenanceDue } from '../maintenance/maintenance-reminder.js';
 import { initDiagnosticsView } from '../ui/diagnostics-view.js';
@@ -116,6 +117,7 @@ async function bootstrap() {
     initTripRecorder();
     initTripView();
     initNavigationView();
+    initNavigationDriveView();
     initFuelView();
     initDiagnosticsView();
     initAiView();
