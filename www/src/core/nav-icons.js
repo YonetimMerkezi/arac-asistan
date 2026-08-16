@@ -18,6 +18,7 @@ const NAV_ICON_BY_TARGET = {
   dashboard: 'panel',
   trip: 'trip',
   navigation: 'map',
+  'navigation-drive': 'navigation',
   fuel: 'fuel',
   diagnostics: 'diagnostics',
   ai: 'analytics',
