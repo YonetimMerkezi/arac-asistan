@@ -114,6 +114,35 @@
   background: var(--sda-danger);
 }
 
+/* --- Leaflet WebView güvenlik stilleri --- */
+/* Leaflet CSS ağdan yüklenemese bile harita karolarının ve kontrollerinin
+   Android WebView içinde doğru konumlanmasını sağlar. */
+.leaflet-container { position: relative; overflow: hidden; background: #d9e2e8; font: inherit; }
+.leaflet-pane, .leaflet-tile, .leaflet-marker-icon, .leaflet-marker-shadow,
+.leaflet-overlay-pane, .leaflet-shadow-pane, .leaflet-marker-pane,
+.leaflet-tooltip-pane, .leaflet-popup-pane { position: absolute; left: 0; top: 0; }
+.leaflet-tile-pane { z-index: 200; }
+.leaflet-overlay-pane { z-index: 400; }
+.leaflet-shadow-pane { z-index: 500; }
+.leaflet-marker-pane { z-index: 600; }
+.leaflet-tooltip-pane { z-index: 650; }
+.leaflet-popup-pane { z-index: 700; }
+.leaflet-map-pane canvas, .leaflet-map-pane svg { position: absolute; }
+.leaflet-tile { visibility: inherit; width: 256px; height: 256px; }
+.leaflet-control { position: relative; z-index: 800; float: left; clear: both; }
+.leaflet-top, .leaflet-bottom { position: absolute; z-index: 1000; pointer-events: none; }
+.leaflet-top { top: 0; } .leaflet-bottom { bottom: 0; }
+.leaflet-left { left: 0; } .leaflet-right { right: 0; }
+.leaflet-top .leaflet-control { margin-top: 10px; }
+.leaflet-bottom .leaflet-control { margin-bottom: 10px; }
+.leaflet-left .leaflet-control { margin-left: 10px; }
+.leaflet-right .leaflet-control { margin-right: 10px; float: right; }
+.leaflet-control-zoom a { display: block; width: 30px; height: 30px; line-height: 30px; text-align: center; background: #fff; color: #222; text-decoration: none; }
+.leaflet-control-zoom a + a { border-top: 1px solid #ddd; }
+.leaflet-control-zoom { box-shadow: 0 1px 5px rgba(0,0,0,.35); border-radius: 4px; overflow: hidden; }
+.leaflet-control-attribution { padding: 2px 5px; background: rgba(255,255,255,.75); color: #333; font-size: 9px; }
+.leaflet-container a { color: #0078a8; }
+
 /* --- İçerik alanı --- */
 .sda-view {
   flex: 1;
@@ -393,13 +422,3 @@
 .sda-nav-btn .sda-icon {
   font-size: 22px !important;
 }
-
-
-/* Smart Drive AI - mobil taşma düzeltmesi */
-html, body, #app-root, #app-root > main { max-width:100%; min-width:0; width:100%; }
-#app-root > main { overflow-x:hidden; }
-.sda-view { min-width:0; max-width:100%; width:100%; overflow-x:hidden; }
-.sda-bottom-nav { width:100%; max-width:100vw; min-width:0; overflow:hidden; }
-.sda-bottom-nav .sda-nav-btn { flex:1 1 0; min-width:0; max-width:none; padding-left:2px; padding-right:2px; font-size:clamp(.52rem, 2.2vw, .68rem); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
-.sda-bottom-nav .sda-nav-btn .sda-icon { flex:0 0 auto; }
-@media (orientation:landscape) { .sda-bottom-nav { width:84px; max-width:84px; } .sda-bottom-nav .sda-nav-btn { flex:0 0 auto; width:100%; font-size:.62rem; } }
