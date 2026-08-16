@@ -1,142 +1,390 @@
 /**
- * Smart Drive AI - Automotive Gauge Web Component
- * SVG tabanlı otomobil gösterge sistemi.
+ * gauge.js
+ * ---------------------------------------------------------------------------
+ * Smart Drive AI - OBD gösterge bileşeni.
  *
- * variant:
- * needle | semi-digital | counter-needle | counter-digital |
- * bar | graph | digital | digital-graph
+ * Tasarımlar:
+ *   analog-classic : Klasik otomobil kadranı + ibre + ölçek
+ *   analog-modern  : Modern yarım kadran + temiz ibre
+ *   digital-card   : Dijital ekran kartı
+ *   digital-modern : Dijital + dairesel ilerleme
+ *   hybrid         : Kadran + büyük dijital okuma
+ *   compact        : Kompakt bar + dijital değer
+ *
+ * Eski kayıtlar:
+ *   arc -> analog-modern
+ *   needle -> analog-classic
+ *   digital -> digital-card
+ *   bar -> compact
+ * ---------------------------------------------------------------------------
  */
 
-const START = 135;
-const SWEEP = 270;
-const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
-const esc = (s) => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const ARC_DEGREES = 270;
+const ARC_START_DEGREE = 135;
+const TICK_COUNT = 21;
 
-function point(cx, cy, r, deg) {
-  const a = deg * Math.PI / 180;
-  return { x: cx + r * Math.cos(a), y: cy + r * Math.sin(a) };
+const LEGACY_ALIASES = {
+  arc: 'analog-modern',
+  needle: 'analog-classic',
+  digital: 'digital-card',
+  bar: 'compact',
+};
+
+const VALID_VARIANTS = new Set([
+  'analog-classic',
+  'analog-modern',
+  'digital-card',
+  'digital-modern',
+  'hybrid',
+  'compact',
+]);
+
+function normalizeVariant(value) {
+  const v = LEGACY_ALIASES[value] ?? value;
+  return VALID_VARIANTS.has(v) ? v : 'analog-modern';
 }
-function arcPath(cx, cy, r, fraction) {
-  const sweep = SWEEP * clamp(fraction, 0, 1);
-  const s = point(cx, cy, r, START);
-  const e = point(cx, cy, r, START + sweep);
-  return `M ${s.x} ${s.y} A ${r} ${r} 0 ${sweep > 180 ? 1 : 0} 1 ${e.x} ${e.y}`;
+
+function pointOnCircle(cx, cy, radius, angleDeg) {
+  const angle = (angleDeg * Math.PI) / 180;
+  return { x: cx + radius * Math.cos(angle), y: cy + radius * Math.sin(angle) };
 }
-function ticks(cx, cy, r, count = 17, majorEvery = 2) {
-  return Array.from({ length: count }, (_, i) => {
-    const f = i / (count - 1);
-    const a = START + SWEEP * f;
-    const outer = point(cx, cy, r + 2, a);
-    const inner = point(cx, cy, r - (i % majorEvery === 0 ? 11 : 6), a);
-    return `<line x1="${inner.x}" y1="${inner.y}" x2="${outer.x}" y2="${outer.y}" class="tick ${i % majorEvery === 0 ? 'major' : ''}"/>`;
-  }).join('');
-}
-function labels(cx, cy, r, min, max, count = 9) {
-  return Array.from({ length: count }, (_, i) => {
-    const f = i / (count - 1);
-    const a = START + SWEEP * f;
-    const p = point(cx, cy, r, a);
-    const val = min + (max - min) * f;
-    const text = Math.abs(val) >= 1000 ? (val / 1000).toFixed(1).replace('.0','') + 'k' : Math.round(val);
-    return `<text x="${p.x}" y="${p.y}" class="dial-label" text-anchor="middle" dominant-baseline="middle">${esc(text)}</text>`;
-  }).join('');
+
+function buildArcPath(cx, cy, radius, fraction) {
+  const safe = Math.max(0, Math.min(1, fraction));
+  const sweep = ARC_DEGREES * safe;
+  if (sweep <= 0.001) return '';
+  const start = pointOnCircle(cx, cy, radius, ARC_START_DEGREE);
+  const end = pointOnCircle(cx, cy, radius, ARC_START_DEGREE + sweep);
+  const largeArc = sweep > 180 ? 1 : 0;
+  return `M ${start.x} ${start.y} A ${radius} ${radius} 0 ${largeArc} 1 ${end.x} ${end.y}`;
 }
 
 export class SdaGauge extends HTMLElement {
   static get observedAttributes() {
-    return ['value','min','max','label','unit','size','variant','danger-above','color-hue','history'];
+    return ['value', 'min', 'max', 'label', 'unit', 'size', 'variant', 'danger-above', 'color-hue'];
   }
-  constructor() { super(); this.attachShadow({mode:'open'}); this.history = []; }
-  connectedCallback() { this.render(); }
-  attributeChangedCallback(name, oldValue, newValue) {
-    if (!this.isConnected) return;
-    if (name === 'value' && newValue !== oldValue) {
-      const n = Number(newValue);
-      if (Number.isFinite(n)) {
-        this.history.push(n);
-        if (this.history.length > 30) this.history.shift();
-      }
-    }
+
+  constructor() {
+    super();
+    this.attachShadow({ mode: 'open' });
+  }
+
+  connectedCallback() {
     this.render();
   }
 
+  attributeChangedCallback() {
+    if (this.isConnected) this.render();
+  }
+
   render() {
-    const raw = this.getAttribute('value');
-    const hasValue = raw !== null && raw !== '' && Number.isFinite(Number(raw));
-    const value = hasValue ? Number(raw) : null;
+    const value = Number(this.getAttribute('value') ?? 0);
     const min = Number(this.getAttribute('min') ?? 0);
     const max = Number(this.getAttribute('max') ?? 100);
     const label = this.getAttribute('label') ?? '';
     const unit = this.getAttribute('unit') ?? '';
-    const size = this.getAttribute('size') ?? 'sm';
-    const variant = this.getAttribute('variant') ?? 'needle';
-    const hue = Number(this.getAttribute('color-hue') ?? 28);
-    const danger = this.getAttribute('danger-above');
-    const accent = `hsl(${Number.isFinite(hue) ? hue : 28} 92% 58%)`;
-    const dangerColor = danger !== null && value !== null && value > Number(danger) ? '#ff4545' : accent;
-    const fraction = value === null ? 0 : (max > min ? clamp((value-min)/(max-min),0,1) : 0);
-    const display = value === null ? '--' : this.format(value);
-    const cls = size === 'lg' ? 'lg' : 'sm';
-    const body = this.renderVariant(variant, fraction, dangerColor, display, unit, min, max, value, cls);
+    const size = this.getAttribute('size') === 'lg' ? 'lg' : 'sm';
+    const variant = normalizeVariant(this.getAttribute('variant'));
+    const dangerAbove = this.getAttribute('danger-above');
+    const hue = this.getAttribute('color-hue');
 
-    this.shadowRoot.innerHTML = `<style>${this.styles()}</style><div class="gauge ${cls} ${variant}">${body}<div class="label">${esc(label)}</div></div>`;
+    const safeMin = Number.isFinite(min) ? min : 0;
+    const safeMax = Number.isFinite(max) && max > safeMin ? max : safeMin + 100;
+    const safeValue = Number.isFinite(value) ? value : safeMin;
+    const clamped = Math.max(safeMin, Math.min(safeMax, safeValue));
+    const fraction = (clamped - safeMin) / (safeMax - safeMin);
+    const danger = dangerAbove !== null && Number.isFinite(Number(dangerAbove)) && safeValue > Number(dangerAbove);
+
+    const accent = hue !== null && Number.isFinite(Number(hue))
+      ? `hsl(${Number(hue)} 92% 60%)`
+      : 'var(--sda-accent, #FF8A3D)';
+    const color = danger ? 'var(--sda-danger, #FF5A5F)' : accent;
+    const displayValue = this.formatValue(clamped);
+
+    const renderers = {
+      'analog-classic': () => this.renderAnalogClassic(fraction, color, size, displayValue, unit, safeMin, safeMax),
+      'analog-modern': () => this.renderAnalogModern(fraction, color, size, displayValue, unit, safeMin, safeMax),
+      'digital-card': () => this.renderDigitalCard(color, size, displayValue, unit),
+      'digital-modern': () => this.renderDigitalModern(fraction, color, size, displayValue, unit),
+      hybrid: () => this.renderHybrid(fraction, color, size, displayValue, unit, safeMin, safeMax),
+      compact: () => this.renderCompact(fraction, color, size, displayValue, unit),
+    };
+
+    this.shadowRoot.innerHTML = `
+      <style>${this.commonStyles()}</style>
+      <div class="gauge-root" data-variant="${variant}">
+        ${renderers[variant]()}
+        ${label ? `<div class="label">${this.escapeHtml(label)}</div>` : ''}
+      </div>
+    `;
   }
 
-  format(v) {
-    if (Math.abs(v) >= 1000 && Number.isInteger(v)) return v.toLocaleString('tr-TR');
-    if (Math.abs(v) < 10 && !Number.isInteger(v)) return v.toFixed(1);
-    return Math.round(v).toLocaleString('tr-TR');
+  formatValue(value) {
+    if (!Number.isFinite(value)) return '--';
+    if (Math.abs(value) >= 1000) return Math.round(value).toLocaleString('tr-TR');
+    if (Number.isInteger(value)) return String(value);
+    return Number(value.toFixed(1)).toString();
   }
 
-  renderVariant(v, fraction, color, display, unit, min, max, value, size) {
-    const S = size === 'lg' ? 300 : 164;
-    const cx = 150, cy = 150, r = 112;
-    const track = arcPath(cx,cy,r,1);
-    const fill = arcPath(cx,cy,r,fraction);
-    const needleA = START + SWEEP * fraction;
-    const tip = point(cx,cy,r-13,needleA);
-    const tail = point(cx,cy,35,needleA+180);
-    const t = ticks(cx,cy,r);
-    const l = labels(cx,cy,87,min,max);
-    const title = esc(this.getAttribute('label') ?? '');
-    const safeColor = color;
-
-    if (v === 'digital') return `<div class="digital-shell"><div class="digital-title">${title}</div><div class="digital-value" style="color:${safeColor}">${display}</div><div class="digital-unit">${esc(unit)}</div><div class="digital-led"></div></div>`;
-    if (v === 'bar') return `<div class="bar-shell"><div class="bar-top"><span>${title}</span><strong style="color:${safeColor}">${display}</strong></div><div class="bar-track"><div class="bar-fill" style="width:${fraction*100}%;background:${safeColor}"></div><div class="bar-glow" style="left:${fraction*100}%;background:${safeColor}"></div></div><div class="bar-unit">${esc(unit)}</div></div>`;
-    if (v === 'graph' || v === 'digital-graph') return this.graphBody(v, safeColor, display, unit, min, max, S);
-
-    const digital = v === 'semi-digital' || v === 'counter-digital';
-    const counter = v === 'counter-digital' || v === 'counter-needle';
-    const valueBlock = digital ? `<div class="center-readout"><span>${display}</span><small>${esc(unit)}</small></div>` : `<div class="lower-readout"><strong>${display}</strong><small>${esc(unit)}</small></div>`;
-    const counterBlock = counter ? `<div class="counter"><span>MAX ${value === null ? '--' : this.format(max)}</span><span>MIN ${value === null ? '--' : this.format(min)}</span></div>` : '';
-
-    return `<div class="dial-shell"><svg viewBox="0 0 300 300" width="${S}" height="${S}" aria-hidden="true">
-      <defs><radialGradient id="face"><stop offset="0" stop-color="#252930"/><stop offset="0.72" stop-color="#111318"/><stop offset="1" stop-color="#07080a"/></radialGradient><linearGradient id="metal"><stop stop-color="#747b84"/><stop offset=".25" stop-color="#1d2127"/><stop offset=".55" stop-color="#9ca2aa"/><stop offset="1" stop-color="#171a1f"/></linearGradient><filter id="glow"><feGaussianBlur stdDeviation="2.5" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter></defs>
-      <circle cx="150" cy="150" r="128" fill="url(#metal)"/><circle cx="150" cy="150" r="121" fill="#08090b"/><circle cx="150" cy="150" r="113" fill="url(#face)" stroke="#333840" stroke-width="1"/>
-      <path d="${track}" class="track"/><path d="${fill}" class="value-arc" style="stroke:${safeColor}" filter="url(#glow)"/>
-      ${t}${l}
-      <text x="150" y="70" class="dial-title">${title}</text>
-      ${v === 'needle' || v === 'counter-needle' || v === 'semi-digital' || v === 'counter-digital' ? `<line x1="${tail.x}" y1="${tail.y}" x2="${tip.x}" y2="${tip.y}" class="needle" style="stroke:${safeColor}"/><circle cx="150" cy="150" r="12" class="hub"/><circle cx="150" cy="150" r="5" style="fill:${safeColor}"/>` : ''}
-      <text x="150" y="205" class="unit-text">${esc(unit)}</text>
-    </svg>${valueBlock}${counterBlock}<div class="glass"></div></div>`;
+  escapeHtml(value) {
+    return String(value)
+      .replaceAll('&', '&amp;')
+      .replaceAll('<', '&lt;')
+      .replaceAll('>', '&gt;')
+      .replaceAll('"', '&quot;')
+      .replaceAll("'", '&#039;');
   }
 
-  graphBody(v, color, display, unit, min, max, S) {
-    const hist = this.history.length ? this.history : [Number(display) || 0];
-    const pts = hist.map((n,i) => {
-      const x = 12 + i * (276 / Math.max(1, hist.length-1));
-      const y = 106 - clamp((n-min)/Math.max(1,max-min),0,1)*82;
-      return `${x},${y}`;
-    }).join(' ');
-    return `<div class="graph-shell"><div class="graph-head"><span>${esc(this.getAttribute('label')||'')}</span><strong style="color:${color}">${display}</strong></div><svg viewBox="0 0 300 125"><defs><linearGradient id="area" x1="0" x2="0" y1="0" y2="1"><stop stop-color="${color}" stop-opacity=".38"/><stop offset="1" stop-color="${color}" stop-opacity="0"/></linearGradient></defs><path d="M12 106 L${pts.replace(/ /g,' L')} L288 106 Z" fill="url(#area)"/><polyline points="${pts}" fill="none" stroke="${color}" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/></svg><div class="graph-unit">${esc(unit)}</div>${v === 'digital-graph' ? `<div class="graph-digital">${display}<small>${esc(unit)}</small></div>` : ''}</div>`;
+  commonStyles() {
+    return `
+      :host {
+        display:block;
+        width:100%;
+        min-width:0;
+        font-family:var(--sda-font-body, Inter, sans-serif);
+        color:var(--sda-text-primary,#EDEFF2);
+      }
+      .gauge-root {
+        width:100%;
+        display:flex;
+        flex-direction:column;
+        align-items:center;
+        box-sizing:border-box;
+      }
+      .wrap {
+        position:relative;
+        width:min(100%, 300px);
+        flex:none;
+      }
+      svg { display:block; width:100%; height:auto; overflow:visible; }
+      .readout {
+        position:absolute;
+        inset:0;
+        display:flex;
+        flex-direction:column;
+        align-items:center;
+        justify-content:center;
+        text-align:center;
+        pointer-events:none;
+      }
+      .val {
+        font-family:var(--sda-font-display,'JetBrains Mono',monospace);
+        font-variant-numeric:tabular-nums;
+        color:var(--sda-text-primary,#EDEFF2);
+        line-height:.95;
+        font-weight:400;
+        white-space:nowrap;
+      }
+      .unit {
+        color:var(--sda-text-muted,#8B93A1);
+        font-size:.72em;
+        line-height:1.1;
+        margin-top:7px;
+        white-space:nowrap;
+      }
+      .label {
+        width:100%;
+        box-sizing:border-box;
+        margin-top:10px;
+        padding:0 8px;
+        text-align:center;
+        font-size:var(--sda-fs-label,.78rem);
+        line-height:1.25;
+        text-transform:uppercase;
+        letter-spacing:var(--sda-letter-label,.08em);
+        color:var(--sda-text-muted,#8B93A1);
+        white-space:normal;
+        overflow-wrap:anywhere;
+      }
+      .track { fill:none; stroke:var(--sda-arc-track,#2F3540); stroke-linecap:round; }
+      .value-arc { fill:none; stroke-linecap:round; }
+      .tick { stroke:var(--sda-text-faint,#59616F); }
+      .tick-major { stroke:var(--sda-text-primary,#B7BDC6); }
+      .needle { stroke-linecap:round; }
+      .scale-text { fill:var(--sda-text-muted,#9299A6); font-size:5px; font-family:Inter,sans-serif; }
+      .digital-card, .compact-box {
+        box-sizing:border-box;
+        width:100%;
+        border-radius:18px;
+        display:flex;
+        flex-direction:column;
+        align-items:center;
+        justify-content:center;
+      }
+      .digital-card {
+        min-height:145px;
+        padding:24px 16px;
+        background:linear-gradient(145deg,var(--sda-bg-elevated,#242933),var(--sda-bg-surface,#171A20));
+        border:1px solid color-mix(in srgb,currentColor 65%,transparent);
+        box-shadow:inset 0 1px 0 rgba(255,255,255,.04), 0 10px 30px rgba(0,0,0,.16);
+      }
+      .digital-card .val { font-size:clamp(2.8rem,9vw,5.2rem); }
+      .digital-modern-box {
+        position:relative;
+        width:100%;
+        aspect-ratio:1;
+        border-radius:50%;
+        display:flex;
+        align-items:center;
+        justify-content:center;
+        background:radial-gradient(circle at 50% 45%, color-mix(in srgb,currentColor 10%,transparent), transparent 58%);
+        box-shadow:inset 0 0 30px rgba(255,255,255,.025);
+      }
+      .digital-modern-box .readout { inset:12%; }
+      .digital-modern-box .val { font-size:clamp(2.6rem,9vw,4.8rem); }
+      .compact-box {
+        min-height:112px;
+        padding:18px 16px;
+        background:var(--sda-bg-elevated,#242933);
+        border:1px solid var(--sda-hairline,rgba(255,255,255,.08));
+      }
+      .compact-box .val { font-size:clamp(1.8rem,6vw,2.8rem); }
+      .bar-track { width:88%; height:8px; margin-top:14px; border-radius:99px; background:var(--sda-arc-track,#2F3540); overflow:hidden; }
+      .bar-fill { height:100%; border-radius:99px; }
+      .small-info { fill:var(--sda-text-muted,#8B93A1); font-size:4px; font-family:Inter,sans-serif; }
+      .center-dot { filter:drop-shadow(0 0 4px currentColor); }
+      :host([size="sm"]) .wrap { max-width:190px; }
+      :host([size="lg"]) .wrap { max-width:330px; }
+      :host([size="sm"]) .label { font-size:.72rem; margin-top:8px; }
+      :host([size="lg"]) .label { font-size:.9rem; margin-top:12px; }
+    `;
   }
 
-  styles() { return `
-    :host{display:block;color:#eef0f3;font-family:system-ui,-apple-system,"Segoe UI",sans-serif;contain:content}
-    *{box-sizing:border-box}.gauge{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:5px}.gauge.lg{width:100%;}.gauge.sm{width:100%}
-    .dial-shell{position:relative;width:100%;max-width:300px;aspect-ratio:1/1;filter:drop-shadow(0 12px 18px rgba(0,0,0,.45))}.sm .dial-shell{max-width:170px}
-    svg{display:block;width:100%;height:100%}.track{fill:none;stroke:#2b2f36;stroke-width:7;stroke-linecap:round}.value-arc{fill:none;stroke-width:6;stroke-linecap:round}.tick{stroke:#626a75;stroke-width:2}.tick.major{stroke:#b0b5bc;stroke-width:3}.dial-label{fill:#c4c8cd;font-size:9px;font-weight:700}.dial-title{fill:#8e959f;font-size:11px;letter-spacing:2px;font-weight:700}.unit-text{fill:#777f89;font-size:10px;letter-spacing:1px}.needle{stroke-width:4;stroke-linecap:round;filter:url(#glow);transition:transform .12s linear}.hub{fill:#262b31;stroke:#8c9299;stroke-width:2}.glass{position:absolute;inset:5%;border-radius:50%;background:linear-gradient(145deg,rgba(255,255,255,.10),transparent 28%,transparent 65%,rgba(255,255,255,.025));pointer-events:none}.lower-readout{position:absolute;left:0;right:0;bottom:16%;text-align:center;text-shadow:0 2px 8px #000}.lower-readout strong{display:block;font-size:28px;line-height:1;font-variant-numeric:tabular-nums}.lower-readout small,.center-readout small{display:block;color:#8d949e;font-size:11px}.center-readout{position:absolute;left:0;right:0;top:46%;text-align:center;text-shadow:0 2px 8px #000}.center-readout span{font-size:28px;font-variant-numeric:tabular-nums}.counter{position:absolute;left:16%;right:16%;bottom:11%;display:flex;justify-content:space-between;color:#777f89;font-size:8px;letter-spacing:.5px}.label{font-size:12px;letter-spacing:2px;text-transform:uppercase;color:#9aa1aa;font-weight:600;text-align:center;max-width:95%;}.lg .label{font-size:15px}.digital-shell,.bar-shell,.graph-shell{width:100%;max-width:260px;background:linear-gradient(145deg,#262b32,#101216);border:1px solid #3a4048;border-radius:18px;box-shadow:inset 0 1px rgba(255,255,255,.05),0 10px 20px rgba(0,0,0,.35);padding:18px}.sm .digital-shell,.sm .bar-shell,.sm .graph-shell{max-width:160px;padding:12px;border-radius:13px}.digital-title,.bar-top span,.graph-head span{font-size:9px;letter-spacing:1.5px;text-transform:uppercase;color:#7f8791}.digital-value{font-size:52px;line-height:1;font-variant-numeric:tabular-nums;font-weight:500;text-align:center;margin:12px 0 5px;text-shadow:0 0 14px currentColor}.sm .digital-value{font-size:29px}.digital-unit,.bar-unit,.graph-unit{color:#7f8791;text-align:center;font-size:10px}.digital-led{width:7px;height:7px;border-radius:50%;background:#3cff7a;box-shadow:0 0 9px #3cff7a;margin:10px auto 0}.bar-top,.graph-head{display:flex;justify-content:space-between;align-items:end;gap:8px}.bar-top strong,.graph-head strong{font-size:22px;font-variant-numeric:tabular-nums}.sm .bar-top strong,.sm .graph-head strong{font-size:15px}.bar-track{height:18px;background:#0b0d10;border-radius:20px;border:1px solid #30353c;overflow:visible;margin:18px 0 6px;position:relative}.bar-fill{height:100%;border-radius:20px;box-shadow:0 0 12px currentColor;transition:width .12s linear}.bar-glow{position:absolute;top:50%;width:8px;height:28px;border-radius:50%;transform:translate(-50%,-50%);box-shadow:0 0 14px currentColor}.graph-shell svg{width:100%;height:auto;margin-top:8px;background:repeating-linear-gradient(0deg,#121519 0 1px,transparent 1px 25px),repeating-linear-gradient(90deg,#121519 0 1px,transparent 1px 30px)}.graph-digital{text-align:center;font-size:27px;margin-top:-30px;position:relative;font-variant-numeric:tabular-nums}.graph-digital small{display:block;font-size:9px;color:#7f8791}.graph-unit{text-align:right}
-  `; }
+  geometry() {
+    return { box: 160, cx: 80, cy: 80, radius: 61 };
+  }
+
+  renderTicks(g, count = TICK_COUNT, min = 0, max = 100) {
+    return Array.from({ length: count }, (_, i) => {
+      const f = i / (count - 1);
+      const angle = ARC_START_DEGREE + ARC_DEGREES * f;
+      const major = i % 2 === 0;
+      const outer = pointOnCircle(g.cx, g.cy, g.radius + (major ? 5 : 3), angle);
+      const inner = pointOnCircle(g.cx, g.cy, g.radius - (major ? 9 : 5), angle);
+      const value = min + (max - min) * f;
+      return `
+        <line class="${major ? 'tick-major' : 'tick'}" x1="${inner.x}" y1="${inner.y}" x2="${outer.x}" y2="${outer.y}" stroke-width="${major ? 2.5 : 1.4}"/>
+        ${major ? `<text class="scale-text" x="${pointOnCircle(g.cx,g.cy,g.radius-18,angle).x}" y="${pointOnCircle(g.cx,g.cy,g.radius-18,angle).y + 1.5}" text-anchor="middle">${this.formatScale(value)}</text>` : ''}
+      `;
+    }).join('');
+  }
+
+  formatScale(value) {
+    if (Math.abs(value) >= 1000) return `${Math.round(value / 1000)}k`;
+    if (Number.isInteger(value)) return String(value);
+    return String(Number(value.toFixed(1)));
+  }
+
+  renderAnalogClassic(fraction, color, size, displayValue, unit, min, max) {
+    const g = this.geometry();
+    const angle = ARC_START_DEGREE + ARC_DEGREES * fraction;
+    const tip = pointOnCircle(g.cx, g.cy, g.radius - 8, angle);
+    const tail = pointOnCircle(g.cx, g.cy, 13, angle + 180);
+    return `
+      <div class="wrap">
+        <svg viewBox="0 0 160 160" aria-hidden="true">
+          <circle cx="80" cy="80" r="68" fill="none" stroke="rgba(255,255,255,.035)" stroke-width="8"/>
+          <path d="${buildArcPath(g.cx,g.cy,g.radius,1)}" class="track" stroke-width="4"/>
+          ${this.renderTicks(g, TICK_COUNT, min, max)}
+          <line x1="${tail.x}" y1="${tail.y}" x2="${tip.x}" y2="${tip.y}" class="needle" stroke="${color}" stroke-width="4"/>
+          <circle cx="80" cy="80" r="8" fill="${color}" class="center-dot"/>
+          <circle cx="80" cy="80" r="3" fill="#11151A"/>
+        </svg>
+        <div class="readout" style="justify-content:flex-end;padding-bottom:12%;">
+          <span class="val" style="font-size:${size === 'lg' ? '2.4rem' : '1.45rem'};">${displayValue}</span>
+          <span class="unit">${unit}</span>
+        </div>
+      </div>`;
+  }
+
+  renderAnalogModern(fraction, color, size, displayValue, unit, min, max) {
+    const g = this.geometry();
+    const angle = ARC_START_DEGREE + ARC_DEGREES * fraction;
+    const tip = pointOnCircle(g.cx, g.cy, g.radius - 10, angle);
+    return `
+      <div class="wrap">
+        <svg viewBox="0 0 160 160" aria-hidden="true">
+          <path d="${buildArcPath(g.cx,g.cy,g.radius,1)}" class="track" stroke-width="10"/>
+          <path d="${buildArcPath(g.cx,g.cy,g.radius,fraction)}" class="value-arc" stroke="${color}" stroke-width="10"/>
+          ${this.renderTicks(g, 11, min, max)}
+          <line x1="80" y1="80" x2="${tip.x}" y2="${tip.y}" class="needle" stroke="${color}" stroke-width="4"/>
+          <circle cx="80" cy="80" r="8" fill="${color}" class="center-dot"/>
+          <circle cx="80" cy="80" r="3" fill="#11151A"/>
+        </svg>
+        <div class="readout" style="justify-content:flex-end;padding-bottom:13%;">
+          <span class="val" style="font-size:${size === 'lg' ? '2.7rem' : '1.55rem'};">${displayValue}</span>
+          <span class="unit">${unit}</span>
+        </div>
+      </div>`;
+  }
+
+  renderDigitalCard(color, size, displayValue, unit) {
+    return `
+      <div class="wrap">
+        <div class="digital-card" style="color:${color};">
+          <div style="font-size:.72rem;letter-spacing:.14em;color:var(--sda-text-muted,#8B93A1);margin-bottom:10px;">LIVE DATA</div>
+          <span class="val" style="color:${color};">${displayValue}</span>
+          <span class="unit">${unit}</span>
+        </div>
+      </div>`;
+  }
+
+  renderDigitalModern(fraction, color, size, displayValue, unit) {
+    const r = 61;
+    const circumference = 2 * Math.PI * r;
+    const dash = circumference * fraction;
+    return `
+      <div class="wrap">
+        <div class="digital-modern-box" style="color:${color};">
+          <svg viewBox="0 0 160 160" aria-hidden="true" style="position:absolute;inset:0;">
+            <circle cx="80" cy="80" r="61" fill="none" stroke="rgba(255,255,255,.07)" stroke-width="8"/>
+            <circle cx="80" cy="80" r="61" fill="none" stroke="${color}" stroke-width="8" stroke-linecap="round"
+              stroke-dasharray="${dash} ${circumference-dash}" transform="rotate(-90 80 80)"/>
+          </svg>
+          <div class="readout">
+            <span style="font-size:.7rem;letter-spacing:.12em;color:var(--sda-text-muted,#8B93A1);">DIGITAL</span>
+            <span class="val" style="color:${color};margin-top:7px;">${displayValue}</span>
+            <span class="unit">${unit}</span>
+          </div>
+        </div>
+      </div>`;
+  }
+
+  renderHybrid(fraction, color, size, displayValue, unit, min, max) {
+    const g = this.geometry();
+    const angle = ARC_START_DEGREE + ARC_DEGREES * fraction;
+    const tip = pointOnCircle(g.cx,g.cy,g.radius-8,angle);
+    return `
+      <div class="wrap">
+        <svg viewBox="0 0 160 160" aria-hidden="true">
+          <path d="${buildArcPath(g.cx,g.cy,g.radius,1)}" class="track" stroke-width="5"/>
+          <path d="${buildArcPath(g.cx,g.cy,g.radius,fraction)}" class="value-arc" stroke="${color}" stroke-width="5"/>
+          ${this.renderTicks(g, 9, min, max)}
+          <line x1="80" y1="80" x2="${tip.x}" y2="${tip.y}" class="needle" stroke="${color}" stroke-width="3"/>
+          <circle cx="80" cy="80" r="7" fill="${color}"/>
+        </svg>
+        <div class="readout" style="justify-content:center;">
+          <span style="font-size:.68rem;letter-spacing:.13em;color:var(--sda-text-muted,#8B93A1);">HYBRID</span>
+          <span class="val" style="font-size:${size === 'lg' ? '2.6rem' : '1.5rem'};margin-top:6px;">${displayValue}</span>
+          <span class="unit">${unit}</span>
+        </div>
+      </div>`;
+  }
+
+  renderCompact(fraction, color, size, displayValue, unit) {
+    return `
+      <div class="wrap">
+        <div class="compact-box" style="color:${color};">
+          <div style="width:100%;display:flex;align-items:baseline;justify-content:center;gap:7px;">
+            <span class="val">${displayValue}</span>
+            <span class="unit" style="margin-top:0;">${unit}</span>
+          </div>
+          <div class="bar-track">
+            <div class="bar-fill" style="width:${fraction*100}%;background:${color};"></div>
+          </div>
+        </div>
+      </div>`;
+  }
 }
 
 customElements.define('sda-gauge', SdaGauge);
