@@ -152,14 +152,15 @@ function renderNormalMode(content) {
     if (!def) return; // Kayıt dışı kalmış bir PID varsa sessizce atla.
 
     const card = document.createElement('div');
-    card.className = 'sda-card sda-card--elevated';
+    card.className = `sda-card sda-card--elevated sda-gauge-card--${instance.gaugeSize || 'md'}`;
     card.setAttribute('data-pid-card', def.pid);
     // DÜZELTME: <sda-gauge> kendi içinde inline-flex olduğu için, kartın
     // kendisi ortalamadıkça geniş (grid) kartlarda sola yapışık duruyordu -
     // "göstergeler ortalı değil" şikayetinin sebebi buydu.
     card.style.cssText = 'display:flex; flex-direction:column; align-items:center; text-align:center; overflow:hidden;';
-    const isPrimary = index === 0;
-    if (isPrimary) card.style.gridColumn = '1 / -1';
+    const isPrimary = index === 0 && !instance.gaugeSize;
+    if (instance.gaugeSize === 'lg') card.style.gridColumn = '1 / -1';
+    else if (isPrimary) card.style.gridColumn = '1 / -1';
 
     const gauge = document.createElement('sda-gauge');
     const minDisplay = convertForDisplay(def, def.min);
@@ -168,7 +169,7 @@ function renderNormalMode(content) {
     gauge.setAttribute('unit', minDisplay.unit);
     gauge.setAttribute('min', String(minDisplay.value));
     gauge.setAttribute('max', String(maxDisplay.value));
-    gauge.setAttribute('size', isPrimary ? 'lg' : 'sm');
+    gauge.setAttribute('size', instance.gaugeSize || (isPrimary ? 'lg' : 'md'));
     gauge.setAttribute('variant', instance.gaugeStyle || 'analog-modern');
     gauge.setAttribute('value', String(minDisplay.value));
     if (def.dangerAbove !== undefined) {

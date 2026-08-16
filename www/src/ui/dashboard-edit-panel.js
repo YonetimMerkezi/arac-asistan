@@ -14,6 +14,7 @@ import {
   setDashboardWidgets,
   setWidgetColor,
   setWidgetStyle,
+  setWidgetSize,
 } from '../core/dashboard-config-store.js';
 
 const COLOR_PRESETS = [28, 4, 48, 142, 199, 291, 335, 0];
@@ -87,6 +88,14 @@ export function renderEditModePanel(content, getContent) {
               ${iconMarkup('palette', { size: 17 })}<span>Değiştir</span>
             </button>
           </div>
+          <div class="sda-size-row">
+            <span>Boyut</span>
+            <div class="sda-size-list">
+              ${[['sm','Küçük'],['md','Orta'],['lg','Büyük']].map(([size,label]) => `
+                <button type="button" data-set-size="${def.pid}" data-size="${size}" aria-current="${(instance?.gaugeSize ?? 'md') === size}">${label}</button>
+              `).join('')}
+            </div>
+          </div>
           <div class="sda-color-row">
             <span>Renk</span>
             <div class="sda-color-list">
@@ -129,6 +138,13 @@ function bindEditModeEvents(list) {
   list.querySelectorAll('[data-move-down]').forEach((button) => {
     button.addEventListener('click', async () => {
       await moveWidget(button.getAttribute('data-move-down'), 1);
+      refreshEditModePanel();
+    });
+  });
+
+  list.querySelectorAll('[data-set-size]').forEach((button) => {
+    button.addEventListener('click', async () => {
+      await setWidgetSize(button.getAttribute('data-set-size'), button.getAttribute('data-size'));
       refreshEditModePanel();
     });
   });
@@ -242,6 +258,11 @@ function injectEditPanelStyles() {
     .sda-style-current__text span{font-size:.65rem;color:var(--sda-text-muted,#8B93A1);text-transform:uppercase;letter-spacing:.08em}
     .sda-style-current__text strong{font-size:.84rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
     .sda-style-change{display:flex;align-items:center;gap:5px;border:0;background:none;color:var(--sda-accent,#FF8A3D);font-weight:700;white-space:nowrap}
+    .sda-size-row{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-top:10px}
+    .sda-size-row>span{font-size:.72rem;color:var(--sda-text-muted,#8B93A1)}
+    .sda-size-list{display:flex;gap:5px;flex-wrap:wrap;justify-content:flex-end}
+    .sda-size-list button{border:1px solid var(--sda-hairline);background:var(--sda-bg-surface);color:var(--sda-text-muted);border-radius:9px;padding:6px 9px;font-size:.68rem;font-weight:700}
+    .sda-size-list button[aria-current="true"]{background:var(--sda-accent-soft);border-color:var(--sda-accent);color:var(--sda-accent)}
     .sda-color-row{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-top:10px}
     .sda-color-row>span{font-size:.72rem;color:var(--sda-text-muted,#8B93A1)}
     .sda-color-list{display:flex;gap:7px;flex-wrap:wrap;justify-content:flex-end}
