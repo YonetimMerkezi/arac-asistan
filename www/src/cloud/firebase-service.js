@@ -24,6 +24,7 @@ export async function initFirebaseService(){
     if(!auth.currentUser)await signInAnonymously(auth);
     user=auth.currentUser;
     await enableNetwork(db).catch(()=>{});
+    await testFirestoreConnection();
     logInfo('firebase','Firebase hazır.',{uid:user?.uid});
     return {enabled:true,user};
   }catch(error){
@@ -36,12 +37,24 @@ export async function initFirebaseService(){
 export function isFirebaseReady(){return initialized&&!!db&&!!auth?.currentUser;}
 export function getFirebaseUser(){return user??auth?.currentUser??null;}
 
+export async function testFirestoreConnection(){
+  if(!initialized||!db)throw new Error('Firestore hazır değil.');
+  const uid=getFirebaseUser()?.uid;
+  if(!uid)throw new Error('Firebase kullanıcı oturumu yok.');
+  const ref=doc(db,'users',uid,'meta','connection');
+  await setDoc(ref,{status:'online',checkedAt:serverTimestamp(),app:'smart-drive-ai',version:2},{merge:true});
+  const snap=await getDoc(ref);
+  if(!snap.exists())throw new Error('Firestore yazma/okuma testi başarısız.');
+  return true;
+}
+
 export async function uploadSnapshot(snapshot){
   if(!isFirebaseReady())throw new Error('Firebase bağlı değil.');
   const uid=getFirebaseUser()?.uid;
   if(!uid)throw new Error('Firebase kullanıcı oturumu yok.');
-  await setDoc(doc(db,'users',uid,'sync','current'),{version:1,updatedAt:serverTimestamp(),payload:snapshot},{merge:false});
-  return true;
+  const now=new Date().toISOString();
+  await setDoc(doc(db,'users',uid,'sync','current'),{version:2,schemaVersion:snapshot?.formatVersion??1,updatedAt:serverTimestamp(),clientUpdatedAt:now,payload:snapshot},{merge:false});
+  return {ok:true,clientUpdatedAt:now};
 }
 
 export async function downloadSnapshot(){
@@ -49,7 +62,9 @@ export async function downloadSnapshot(){
   const uid=getFirebaseUser()?.uid;
   if(!uid)throw new Error('Firebase kullanıcı oturumu yok.');
   const snap=await getDoc(doc(db,'users',uid,'sync','current'));
-  return snap.exists()?snap.data().payload??null:null;
+  if(!snap.exists())return null;
+  const data=snap.data();
+  return {payload:data?.payload??null,clientUpdatedAt:data?.clientUpdatedAt??null,schemaVersion:data?.schemaVersion??1};
 }
 
 export async function setFirebaseNetwork(online){
