@@ -1,10 +1,3 @@
-/**
- * app-init.js
- * ---------------------------------------------------------------------------
- * Uygulamanın tek giriş noktası (entry point).
- * Sorumluluğu yalnızca modülleri doğru sırayla başlatmaktır.
- * ---------------------------------------------------------------------------
- */
 import { initThemeManager } from './theme-manager.js';
 import { initKeepAwake } from './keep-awake.js';
 import { initOwnerName, getOwnerName } from './owner-name-store.js';
@@ -94,8 +87,17 @@ async function bootstrap() {
     initDiagnosticsView();
     initAiView();
     initSettingsView();
+
+    // Firebase, veritabanı hazır olduktan sonra başlatılır. Başarısızlık
+    // uygulamanın yerel/offline çalışma akışını engellemez.
+    const firebaseResult = await initFirebaseService();
     initFirebaseSettingsPanel();
-    void initFirebaseService();
+    if (firebaseResult.enabled) {
+      logInfo('app-init', 'Firebase anonim oturum hazır', { uid: firebaseResult.user?.uid });
+    } else {
+      logInfo('app-init', 'Firebase kullanılamıyor; yerel çalışma devam ediyor.');
+    }
+
     initSpeedCameraService();
     initSpeedWarning();
     await initAverageSpeedCorridor();
@@ -140,18 +142,10 @@ async function initializeElm327AndVoice() {
         readFuelType(),
       ]);
       setVehicleInfo({ supportedPids, vin, fuelType });
-      logInfo('app-init', `Araç bilgileri alındı (deneme ${attempt}/${MAX_ATTEMPTS})`, {
-        supportedPidCount: supportedPids.length,
-        vin,
-        fuelType,
-      });
+      logInfo('app-init', `Araç bilgileri alındı (deneme ${attempt}/${MAX_ATTEMPTS})`, { supportedPidCount: supportedPids.length, vin, fuelType });
       const verified = await speakConnectionGreeting(getOwnerName());
       if (!verified) {
-        if (attempt < MAX_ATTEMPTS) {
-          logWarn('app-init', `Bağlantı doğrulanamadı, ${RETRY_DELAY_MS}ms sonra tekrar denenecek (${attempt}/${MAX_ATTEMPTS})`);
-          await sleep(RETRY_DELAY_MS);
-          continue;
-        }
+        if (attempt < MAX_ATTEMPTS) { await sleep(RETRY_DELAY_MS); continue; }
         setEcuStatus('failed', 'Kontak açık mı, motor çalışıyor mu kontrol edin');
         return;
       }
@@ -202,12 +196,8 @@ function bindConnectionStatusToast() {
     toast.setAttribute('data-connection-toast', '');
     toast.setAttribute('role', 'status');
     const isConnected = state.status === 'connected';
-    toast.style.cssText = 'position:fixed;top:0;left:0;right:0;z-index:9998;' + `background:${isConnected ? 'var(--sda-success,#34D399)' : 'var(--sda-accent,#FF8A3D)'};` + 'color:#14171C;padding:8px 12px;font-size:.8rem;text-align:center;font-weight:600;';
-    toast.textContent = isConnected
-      ? `Bağlandı: ${state.deviceName ?? state.deviceAddress}`
-      : state.status === 'reconnecting'
-        ? 'Araç bağlantısı yeniden kuruluyor...'
-        : `${state.deviceName ?? state.deviceAddress ?? 'Araç'} cihazına bağlanılıyor...`;
+    toast.style.cssText = 'position:fixed;top:0;left:0;right:0;z-index:9998;' + `background:${isConnected ? 'var(--sda-success, #34D399)' : 'var(--sda-accent, #FF8A3D)'};` + 'color:#14171C;padding:8px 12px;font-size:.8rem;text-align:center;font-weight:600;';
+    toast.textContent = isConnected ? `Bağlandı: ${state.deviceName ?? state.deviceAddress}` : state.status === 'reconnecting' ? 'Araç bağlantısı yeniden kuruluyor...' : `${state.deviceName ?? state.deviceAddress ?? 'Araç'} cihazına bağlanılıyor...`;
     document.body.appendChild(toast);
     if (isConnected) setTimeout(() => toast.remove(), 4000);
   });
@@ -237,6 +227,9 @@ function renderFatalError(error) {
   root.innerHTML = `<div class="sda-empty-state" role="alert"><p class="sda-empty-state__title">Uygulama başlatılamadı</p><p>Lütfen uygulamayı yeniden başlatın. Aşağıdaki teknik detayı geliştiriciyle paylaşabilirsiniz.</p><pre style="white-space:pre-wrap;text-align:left;font-size:.75rem;color:var(--sda-danger);background:var(--sda-bg-elevated);padding:12px;border-radius:8px;margin-top:12px;overflow-x:auto;">${escapeHtml(details)}</pre></div>`;
 }
 
-function escapeHtml(text) { return text.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+function escapeHtml(text) {
+  return text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
 
-if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', bootstrap); else bootstrap();
+if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', bootstrap);
+else bootstrap();
