@@ -13,7 +13,7 @@ import { estimateLitersPerHour, estimateLitersPer100Km } from '../fuel/instant-c
 import { onViewChange } from '../core/view-router.js';
 import { getFavoriteLocation, setFavoriteLocation } from '../maps/favorites-store.js';
 
-const S={map:null,vehicleMarker:null,routeLine:null,destMarker:null,favoriteMarker:null,cameraMarkers:[],posOff:null,liveOff:null,viewOff:null,camOff:null,follow:true,navigationActive:false,fullscreen:false,dest:null,lastPos:null,speedLimit:null,heading:0,lastZoom:null,zoomAt:0,speedLimitAt:0,routeCoords:[],routeCum:[],routeTotal:0,routeProgressIndex:0,routeSteps:[],stepIndex:0,deviationSince:0,rerouteBusy:false,searchTimer:null,searchSeq:0,ttsAt:0,docClick:null,resizeHandler:null,pendingFavorite:null};
+const S={map:null,vehicleMarker:null,routeLine:null,destMarker:null,favoriteMarker:null,cameraMarkers:[],posOff:null,liveOff:null,viewOff:null,camOff:null,follow:true,navigationActive:false,fullscreen:false,dest:null,lastPos:null,speedLimit:null,heading:0,lastZoom:null,zoomAt:0,speedLimitAt:0,routeCoords:[],routeCum:[],routeTotal:0,routeProgressIndex:0,routeSteps:[],stepIndex:0,deviationSince:0,rerouteBusy:false,searchTimer:null,searchSeq:0,ttsAt:0,docClick:null,resizeHandler:null,pendingFavorite:null,manualBearing:0,manualRotate:false};
 const el=id=>document.getElementById(id); const set=(id,v)=>{const n=el(id);if(n)n.textContent=v??''};
 const show=(id,v)=>{const n=el(id);if(n)n.style.display=v}; const msg=v=>set('ndv-msg',v);
 
@@ -30,26 +30,68 @@ function injectCss(){if(el('ndv-style'))return;const s=document.createElement('s
 @media(max-width:380px){#ndv-turn-card{left:6px;right:6px}.ndv-turn-text strong{font-size:18px}.ndv-turn-text span{font-size:11px}#ndv-speed-card{width:56px;height:56px}}
 `;document.head.appendChild(s)}
 
-function initMap(lat,lon){if(S.map)return;const c=el('ndv-map');if(!c)return;S.map=L.map(c,{center:[lat,lon],zoom:17,zoomControl:true,attributionControl:true,preferCanvas:true});L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:20,attribution:'© OpenStreetMap'}).addTo(S.map);S.vehicleMarker=L.marker([lat,lon],{icon:vehicleIcon(0),zIndexOffset:1000}).addTo(S.map);S.map.on('dragstart',()=>{if(S.navigationActive){S.follow=false;el('ndv-follow-btn')?.classList.remove('active')}});S.map.on('click',async e=>{if(!S.pendingFavorite)return;const id=S.pendingFavorite,label=id==='home'?'Ev':'İş';S.pendingFavorite=null;S.follow=false;if(S.favoriteMarker)S.map.removeLayer(S.favoriteMarker);S.favoriteMarker=L.marker(e.latlng).addTo(S.map).bindPopup(`${label} olarak kaydedildi`).openPopup();try{await setFavoriteLocation({id,label,lat:e.latlng.lat,lon:e.latlng.lng});msg(`${label} konumu haritada seçtiğiniz noktaya kaydedildi.`)}catch{msg(`${label} konumu kaydedilemedi.`)}});[0,100,300,700].forEach(t=>setTimeout(()=>S.map?.invalidateSize(true),t));el('ndv-loading')?.classList.add('hidden')}
+function initMap(lat,lon){if(S.map)return;const c=el('ndv-map');if(!c)return;S.map=L.map(c,{center:[lat,lon],zoom:17,zoomControl:true,attributionControl:true,preferCanvas:true});L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:20,attribution:'© OpenStreetMap'}).addTo(S.map);S.vehicleMarker=L.marker([lat,lon],{icon:vehicleIcon(0),zIndexOffset:1000}).addTo(S.map);S.map.on('dragstart',()=>{if(S.navigationActive){S.follow=false;el('ndv-follow-btn')?.classList.remove('active')}});S.map.on('click',async e=>{if(!S.pendingFavorite)return;const id=S.pendingFavorite,label=id==='home'?'Ev':'İş';S.pendingFavorite=null;S.follow=false;if(S.favoriteMarker)S.map.removeLayer(S.favoriteMarker);S.favoriteMarker=L.marker(e.latlng).addTo(S.map).bindPopup(`${label} olarak kaydedildi`).openPopup();try{await setFavoriteLocation({id,label,lat:e.latlng.lat,lon:e.latlng.lng});msg(`${label} konumu haritada seçtiğiniz noktaya kaydedildi.`)}catch{msg(`${label} konumu kaydedilemedi.`)}});[0,100,300,700].forEach(t=>setTimeout(()=>S.map?.invalidateSize(true),t));el('ndv-loading')?.classList.add('hidden');
+  attachRotateGesture(c);
+}
+
+function attachRotateGesture(mapEl){
+  // İki parmak açısını hesapla
+  function angle(t){
+    const [a,b]=[t[0],t[1]];
+    return Math.atan2(b.clientY-a.clientY,b.clientX-a.clientX)*180/Math.PI;
+  }
+  let startAngle=null,startMapAngle=0,rotating=false;
+
+  mapEl.addEventListener('touchstart',e=>{
+    if(e.touches.length===2){
+      startAngle=angle(e.touches);
+      startMapAngle=S.manualBearing??0;
+      rotating=true;
+      e.preventDefault();
+    } else {
+      rotating=false;startAngle=null;
+    }
+  },{passive:false});
+
+  mapEl.addEventListener('touchmove',e=>{
+    if(!rotating||e.touches.length!==2)return;
+    e.preventDefault();
+    const delta=angle(e.touches)-startAngle;
+    const bearing=(startMapAngle+delta+360)%360;
+    S.manualBearing=bearing;
+    S.manualRotate=true;
+    applyMapRotation(-bearing);
+    set('ndv-heading-badge',`${Math.round(bearing)}°`);
+  },{passive:false});
+
+  mapEl.addEventListener('touchend',e=>{
+    if(e.touches.length<2){rotating=false;startAngle=null;}
+  });
+}
+
+function applyMapRotation(deg){
+  const mapEl=el('ndv-map');
+  if(mapEl){mapEl.style.transform=`rotate(${deg}deg)`;mapEl.style.transformOrigin='50% 50%';}
+}
 function vehicleIcon(h){return L.divIcon({className:'',html:`<div style="width:0;height:0;border-left:10px solid transparent;border-right:10px solid transparent;border-bottom:28px solid #ff7a18;transform:rotate(${h}deg);filter:drop-shadow(0 2px 4px #0008)"></div>`,iconSize:[20,28],iconAnchor:[10,14]})}
 function hav(a,b){const R=6371,dLat=(b.lat-a.lat)*Math.PI/180,dLon=(b.lon-a.lon)*Math.PI/180,la=a.lat*Math.PI/180,lb=b.lat*Math.PI/180,x=Math.sin(dLat/2)**2+Math.cos(la)*Math.cos(lb)*Math.sin(dLon/2)**2;return R*2*Math.atan2(Math.sqrt(x),Math.sqrt(1-x))}
 function smoothHeading(next){let d=((next-S.heading+540)%360)-180;S.heading=(S.heading+d*.28+360)%360;return S.heading}
 function nearestRoute(lat,lon){if(!S.routeCoords.length)return null;let best=S.routeProgressIndex||0,bestD=Infinity,start=Math.max(0,best-15),end=Math.min(S.routeCoords.length-1,best+100);for(let i=start;i<=end;i++){const c=S.routeCoords[i],d=hav({lat,lon},{lat:c[0],lon:c[1]});if(d<bestD){bestD=d;best=i}}S.routeProgressIndex=best;return {index:best,distance:bestD}}
 function formatDist(km){return km<1?`${Math.max(0,Math.round(km*1000))} m`:`${km.toFixed(km<10?1:0)} km`}
-function updateCamera(lat,lon,speed){if(!S.map||!S.navigationActive||!S.follow)return;const step=S.routeSteps[S.stepIndex];const d=step?.distanceToTurnKm??999;let z=d<.12?19:d<.3?18:d<.8?17:speed>80?15.5:16.5;z=Math.max(14.5,Math.min(19,z));if(Math.abs(z-(S.lastZoom??z))>.25||Date.now()-S.zoomAt>3500){S.map.setZoom(z,{animate:true});S.lastZoom=z;S.zoomAt=Date.now()}S.map.panTo([lat,lon],{animate:true,duration:.35});const deg=-S.heading;
-  // Tüm haritayı döndür (pane'lere değil — Leaflet'in transform'unu ezmez)
-  const mapEl=el('ndv-map');
-  if(mapEl){mapEl.style.transform=`rotate(${deg}deg)`;mapEl.style.transformOrigin='50% 50%'}
+function updateCamera(lat,lon,speed){if(!S.map||!S.navigationActive||!S.follow)return;const step=S.routeSteps[S.stepIndex];const d=step?.distanceToTurnKm??999;let z=d<.12?19:d<.3?18:d<.8?17:speed>80?15.5:16.5;z=Math.max(14.5,Math.min(19,z));if(Math.abs(z-(S.lastZoom??z))>.25||Date.now()-S.zoomAt>3500){S.map.setZoom(z,{animate:true});S.lastZoom=z;S.zoomAt=Date.now()}S.map.panTo([lat,lon],{animate:true,duration:.35});// Navigasyon aktifken araç yönüne göre döndür; elle döndürme devre dışı
+  S.manualRotate=false;S.manualBearing=S.heading;
+  const deg=-S.heading;
+  applyMapRotation(deg);
   set('ndv-heading-badge',`${Math.round(S.heading)}°`)}
 function resetMapBearing(){
-  const mapEl=el('ndv-map');
-  if(mapEl){mapEl.style.transform='';mapEl.style.transformOrigin=''}
-  set('ndv-heading-badge','N')
+  S.manualBearing=0;S.manualRotate=false;
+  applyMapRotation(0);
+  set('ndv-heading-badge','N');
 }
 function updateRouteProgress(pos){const n=nearestRoute(pos.latitude,pos.longitude);if(!n)return;const remain=Math.max(0,S.routeTotal-S.routeCum[n.index]);set('ndv-stat-dist',formatDist(remain));const kmh=Math.max(5,pos.speedKmh||0);const eta=new Date(Date.now()+remain/kmh*60*60*1000);set('ndv-stat-eta',`${String(eta.getHours()).padStart(2,'0')}:${String(eta.getMinutes()).padStart(2,'0')}`);for(let i=S.stepIndex;i<S.routeSteps.length;i++){const st=S.routeSteps[i],d=Math.max(0,S.routeCum[Math.min(n.index,S.routeCum.length-1)]),stepEnd=st.routeEndKm??d+st.distanceKm;if(stepEnd-d<.02){S.stepIndex=i+1;continue}st.distanceToTurnKm=Math.max(0,stepEnd-d);break}const st=S.routeSteps[S.stepIndex];if(st){set('ndv-turn-distance',formatDist(st.distanceToTurnKm??0));set('ndv-turn-instruction',st.instruction||'İlerleyin');set('ndv-turn-road',st.name||'');set('ndv-turn-arrow',turnArrow(st.maneuver));show('ndv-turn-card','flex')}else if(remain<.03)finishNavigation()}
 function turnArrow(m){const s=String(m||'').toLowerCase();if(s.includes('left')||s.includes('sol'))return'↰';if(s.includes('right')||s.includes('sağ'))return'↱';if(s.includes('uturn')||s.includes('geri'))return'↶';if(s.includes('roundabout')||s.includes('dönel'))return'↻';return'↑'}
 function speakNav(text){if(!text||Date.now()-S.ttsAt<6500)return;S.ttsAt=Date.now();import('../voice/tts.js').then(m=>m.speak?.(text)).catch(()=>{})}
-function onPositionUpdate(pos){S.lastPos=pos;if(!S.map)initMap(pos.latitude,pos.longitude);const spd=Math.round(pos.speedKmh||0);set('ndv-speed-val',spd);set('ndv-stat-speed',spd);let h=Number(pos.headingDeg);if(!Number.isFinite(h)||((pos.speedKmh||0)<5))h=S.heading;else h=smoothHeading(h);S.vehicleMarker?.setLatLng([pos.latitude,pos.longitude]);S.vehicleMarker?.setIcon(vehicleIcon(S.navigationActive?0:h));if(S.navigationActive){updateRouteProgress(pos);updateCamera(pos.latitude,pos.longitude,spd);const nr=nearestRoute(pos.latitude,pos.longitude);if(nr&&nr.distance>.06){if(!S.deviationSince)S.deviationSince=Date.now();if(Date.now()-S.deviationSince>2500&&!S.rerouteBusy)reroute()}else S.deviationSince=0}else if(S.follow&&!S.pendingFavorite)S.map?.panTo([pos.latitude,pos.longitude],{animate:true,duration:.35});getSpeedLimit(pos.latitude,pos.longitude);checkCameras()}
+function onPositionUpdate(pos){S.lastPos=pos;if(!S.map)initMap(pos.latitude,pos.longitude);const spd=Math.round(pos.speedKmh||0);set('ndv-speed-val',spd);set('ndv-stat-speed',spd);let h=Number(pos.headingDeg);if(!Number.isFinite(h)||((pos.speedKmh||0)<5))h=S.heading;else h=smoothHeading(h);S.vehicleMarker?.setLatLng([pos.latitude,pos.longitude]);S.vehicleMarker?.setIcon(vehicleIcon(S.navigationActive?0:h));if(S.navigationActive){updateRouteProgress(pos);updateCamera(pos.latitude,pos.longitude,spd);const nr=nearestRoute(pos.latitude,pos.longitude);if(nr&&nr.distance>.06){if(!S.deviationSince)S.deviationSince=Date.now();if(Date.now()-S.deviationSince>2500&&!S.rerouteBusy)reroute()}else S.deviationSince=0}else if(S.follow&&!S.pendingFavorite){S.map?.panTo([pos.latitude,pos.longitude],{animate:true,duration:.35});if(!S.manualRotate)applyMapRotation(0);}getSpeedLimit(pos.latitude,pos.longitude);checkCameras()}
 async function getSpeedLimit(lat,lon){
   if(Date.now()-(S.speedLimitAt||0)<15000)return;
   S.speedLimitAt=Date.now();
@@ -88,5 +130,5 @@ async function favorite(id){try{const f=getFavoriteLocation(id);if(f)await route
 function startFavoritePicker(id){if(!S.map){msg('Harita henüz hazır değil.');return}const label=id==='home'?'Ev':'İş';S.pendingFavorite=id;S.follow=false;el('ndv-follow-btn')?.classList.remove('active');msg(`${label} için haritada kaydetmek istediğiniz noktaya dokunun.`)}
 
 export async function initNavigationDriveView(){injectCss();const view=ensureLayout();if(!view)return;S.posOff?.();S.posOff=onPosition(onPositionUpdate);S.liveOff?.();S.liveOff=onLiveDataChange(()=>{const maf=getLivePidValue('10'),spd=getLivePidValue('0D');if(maf){const l=estimateLitersPerHour(maf.value),v=spd?.value??S.lastPos?.speedKmh??0,c=estimateLitersPer100Km(l,v);set('ndv-stat-cons',c==null?l.toFixed(1):c.toFixed(1))}});S.viewOff?.();S.viewOff=onViewChange(v=>{if(v==='navigation-drive')requestAnimationFrame(()=>S.map?.invalidateSize(true))});const last=getLastPosition();if(last){initMap(last.latitude,last.longitude);onPositionUpdate(last)}else setTimeout(()=>{if(!S.map){initMap(39,35);msg('GPS konumu bekleniyor…')}},2000);
-el('ndv-input')?.addEventListener('input',e=>search(e.target.value.trim()));el('ndv-search-btn')?.addEventListener('click',()=>{const q=el('ndv-input')?.value.trim();if(q)search(q)});el('ndv-input')?.addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault();const q=e.target.value.trim();if(q)search(q)}});el('ndv-clear-search')?.addEventListener('click',()=>{el('ndv-input').value='';S.searchSeq++;show('ndv-suggestions','none')});el('ndv-follow-btn')?.addEventListener('click',()=>{S.pendingFavorite=null;S.follow=true;el('ndv-follow-btn').classList.add('active');if(S.lastPos)S.map?.setView([S.lastPos.latitude,S.lastPos.longitude],18,{animate:true})});el('ndv-start-btn')?.addEventListener('click',startNavigation);el('ndv-cancel-btn')?.addEventListener('click',cancelRoute);el('ndv-fullscreen-exit')?.addEventListener('click',exitFullscreen);view.querySelectorAll('#ndv-shortcuts [data-dest]').forEach(b=>b.addEventListener('click',()=>b.dataset.dest==='locate'?el('ndv-follow-btn')?.click():favorite(b.dataset.dest)));view.querySelectorAll('#ndv-set-favorites [data-set-favorite]').forEach(b=>b.addEventListener('click',()=>startFavoritePicker(b.dataset.setFavorite)));S.camOff?.();S.camOff=onCamerasUpdate(()=>checkCameras());if(S.docClick)document.removeEventListener('click',S.docClick);S.docClick=e=>{if(!e.target.closest('#ndv-suggestions')&&!e.target.closest('#ndv-search-box'))show('ndv-suggestions','none')};document.addEventListener('click',S.docClick,{passive:true});if(S.resizeHandler)window.removeEventListener('resize',S.resizeHandler);S.resizeHandler=()=>S.map?.invalidateSize(true);window.addEventListener('resize',S.resizeHandler);el('ndv-follow-btn')?.classList.add('active')}
+el('ndv-input')?.addEventListener('input',e=>search(e.target.value.trim()));el('ndv-search-btn')?.addEventListener('click',()=>{const q=el('ndv-input')?.value.trim();if(q)search(q)});el('ndv-input')?.addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault();const q=e.target.value.trim();if(q)search(q)}});el('ndv-clear-search')?.addEventListener('click',()=>{el('ndv-input').value='';S.searchSeq++;show('ndv-suggestions','none')});el('ndv-follow-btn')?.addEventListener('click',()=>{S.pendingFavorite=null;S.follow=true;S.manualRotate=false;el('ndv-follow-btn').classList.add('active');if(S.lastPos)S.map?.setView([S.lastPos.latitude,S.lastPos.longitude],18,{animate:true});if(!S.navigationActive)resetMapBearing();});el('ndv-start-btn')?.addEventListener('click',startNavigation);el('ndv-cancel-btn')?.addEventListener('click',cancelRoute);el('ndv-fullscreen-exit')?.addEventListener('click',exitFullscreen);view.querySelectorAll('#ndv-shortcuts [data-dest]').forEach(b=>b.addEventListener('click',()=>b.dataset.dest==='locate'?el('ndv-follow-btn')?.click():favorite(b.dataset.dest)));view.querySelectorAll('#ndv-set-favorites [data-set-favorite]').forEach(b=>b.addEventListener('click',()=>startFavoritePicker(b.dataset.setFavorite)));S.camOff?.();S.camOff=onCamerasUpdate(()=>checkCameras());if(S.docClick)document.removeEventListener('click',S.docClick);S.docClick=e=>{if(!e.target.closest('#ndv-suggestions')&&!e.target.closest('#ndv-search-box'))show('ndv-suggestions','none')};document.addEventListener('click',S.docClick,{passive:true});if(S.resizeHandler)window.removeEventListener('resize',S.resizeHandler);S.resizeHandler=()=>S.map?.invalidateSize(true);window.addEventListener('resize',S.resizeHandler);el('ndv-follow-btn')?.classList.add('active')}
 export function destroyNavigationDriveView(){S.posOff?.();S.liveOff?.();S.viewOff?.();S.camOff?.();if(S.docClick)document.removeEventListener('click',S.docClick);if(S.resizeHandler)window.removeEventListener('resize',S.resizeHandler);S.docClick=null;S.resizeHandler=null;clearTimeout(S.searchTimer);S.map?.remove();S.map=null;S.vehicleMarker=null;S.routeLine=null;S.destMarker=null;S.favoriteMarker=null;S.cameraMarkers=[];S.navigationActive=false;S.fullscreen=false;S.dest=null;S.pendingFavorite=null;S.routeCoords=[];S.routeSteps=[];S.routeCum=[];S.routeTotal=0;S.routeProgressIndex=0;S.stepIndex=0;S.deviationSince=0;resetMapBearing();exitFullscreen()}
