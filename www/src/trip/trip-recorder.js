@@ -1,97 +1,65 @@
 /**
  * trip-recorder.js
  * ---------------------------------------------------------------------------
- * Yolculuk kaydı: OBD bağlantısı kurulduğunda (araç çalıştığında) otomatik
- * başlar, bağlantı kesildiğinde (araç durduğunda) otomatik biter.
- *
- * Sorumlulukları:
- *  - Haversine ile kümülatif mesafe hesaplamak (GPS akışı core/gps-tracker.js'ten gelir)
- *  - MAF (hava kütle akışı, PID 10) entegrasyonuyla yakıt tüketimini tahmin
- *    etmek (Torque ve benzeri OBD uygulamalarının kullandığı, stokiyometrik
- *    hava/yakıt oranına dayalı yaygın bir yaklaşım)
- *  - Yolculuk özetini trip-repository.js üzerinden kalıcı hale getirmek
- *
- * NOT: GPS izlemeyi kendi AÇIP KAPAMAZ - core/gps-tracker.js bunu Bluetooth
- * bağlantı durumuna göre merkezi olarak yönetir; bu modül yalnızca onPosition()
- * ile abone olur (Faz 5'te navigasyon/hız uyarı modülleri de aynı kaynağı kullanır).
+ * Yolculuk kaydı Bluetooth bağlantısıyla izlemeye başlar, fakat veritabanına
+ * gerçek bir trips kaydı ancak araç anlamlı biçimde hareket ettikten sonra
+ * yazılır. Böylece kontak/OBD testi, park halinde bağlantı ve uygulamanın
+ * beklenmedik kapanması 0 km yolculuk üretmez.
  * ---------------------------------------------------------------------------
  */
 
 import { onStateChange as onBluetoothStateChange } from '../bluetooth/bluetooth-manager.js';
 import { onPosition } from '../core/gps-tracker.js';
 import { queryPid } from '../obd/elm327.js';
-import { createTrip, updateTripSummary, addTripPoint, deleteTrip } from '../data/trip-repository.js';
+import { createTrip, updateTripSummary, addTripPoint, deleteInvalidTrips } from '../data/trip-repository.js';
 import { haversineDistanceKm } from './geo-utils.js';
 import { logError, logInfo, logWarn } from '../core/logger.js';
 
-/** @type {number} Ardışık iki GPS noktası arasında en az bu kadar süre (ms) geçmeli - DB şişmesin. */
 const MIN_POINT_INTERVAL_MS = 4000;
-
-/** @type {number} MAF örnekleme aralığı (ms). */
 const FUEL_SAMPLE_INTERVAL_MS = 3000;
-
-/** Bağlantı açıldı ama araç anlamlı şekilde hareket etmediyse kayıt tutulmaz. */
-const MIN_SAVE_DISTANCE_KM = 0.25;
-const MIN_SAVE_SPEED_KMH = 5;
-
-/** @type {number} Benzin için varsayılan stokiyometrik hava/yakıt oranı (kütlece). */
+/** 50 metrenin altındaki oturumlar yolculuk sayılmaz. */
+const MIN_SAVE_DISTANCE_KM = 0.05;
 const STOICHIOMETRIC_AFR = 14.7;
-
-/** @type {number} Benzin yoğunluğu (g/L), yakıt tipi bilinmiyorsa varsayılan. */
 const FUEL_DENSITY_G_PER_L = 750;
 
 /**
  * @typedef {Object} ActiveTripState
- * @property {number} tripId
+ * @property {number|null} tripId
  * @property {number} startedAt
  * @property {number} distanceKm
  * @property {number} maxSpeedKmh
  * @property {number} fuelUsedLiters
  * @property {{lat: number, lng: number, at: number}|null} lastPoint
+ * @property {{lat:number,lng:number,speedKmh:number,at:number}[]} pendingPoints
+ * @property {Promise<number>|null} persistencePromise
  */
 
 /** @type {ActiveTripState|null} */
 let active = null;
-
-/** @type {boolean} startTrip() senkron olarak HEMEN true yapar (ilk await'ten ÖNCE) -
- * bkz. startTrip()'in başındaki kritik hata düzeltmesi notu. */
 let startInProgress = false;
-
-/** @type {(() => void)|null} gps-tracker aboneliğini iptal eden fonksiyon. */
 let unsubscribePosition = null;
-
-/** @type {ReturnType<typeof setInterval>|null} */
 let fuelSampleInterval = null;
-
-/** @type {(() => void)|null} */
 let unsubscribeBluetooth = null;
 
-/**
- * Kayıt modülünü başlatır: Bluetooth bağlantı durumuna abone olur, bağlantı
- * kurulunca otomatik yolculuk başlatır, kesilince otomatik bitirir.
- */
 export function initTripRecorder() {
-  if (unsubscribeBluetooth) return; // zaten başlatılmış
+  if (unsubscribeBluetooth) return;
+
+  // Önceki sürümlerden kalan 0 km / yarım kayıtları tek seferde temizle.
+  void deleteInvalidTrips().catch((error) => {
+    logWarn('trip-recorder', 'Eski geçersiz yolculuklar temizlenemedi', error);
+  });
 
   unsubscribeBluetooth = onBluetoothStateChange((state) => {
     if (state.status === 'connected' && !active && !startInProgress) {
-      void startTrip();
+      startTrip();
     } else if (state.status !== 'connected' && active) {
       void stopTrip();
     }
   });
 
-  logInfo('trip-recorder', 'Yolculuk kaydı modülü başlatıldı (otomatik başlat/bitir aktif)');
+  logInfo('trip-recorder', 'Yolculuk kaydı modülü başlatıldı; gerçek hareket bekleniyor.');
 }
 
-/**
- * Şu an devam eden bir yolculuk varsa canlı istatistiklerini döndürür -
- * yoksa null. Yolculuklar ekranının (trip-view.js) sürüş SIRASINDA da
- * ilerlemeyi gösterebilmesi için eklendi - önceden bu veri hiç dışa
- * açılmıyordu, ekran yalnızca yolculuk BİTİNCE (DB'ye yazılınca) veri
- * gösterebiliyordu.
- * @returns {{tripId: number, startedAt: number, distanceKm: number, maxSpeedKmh: number}|null}
- */
 export function getActiveTripStats() {
   if (!active) return null;
   return {
@@ -102,9 +70,6 @@ export function getActiveTripStats() {
   };
 }
 
-/**
- * Kaynakları serbest bırakır (bellek sızıntısı önleme).
- */
 export function disposeTripRecorder() {
   unsubscribeBluetooth?.();
   unsubscribeBluetooth = null;
@@ -112,41 +77,60 @@ export function disposeTripRecorder() {
 }
 
 /**
- * Yeni bir yolculuk başlatır: DB kaydı oluşturur, konum akışına abone olur,
- * yakıt örneklemesini başlatır.
- * @returns {Promise<void>}
+ * Bluetooth bağlandığında yalnızca bellekte aday yolculuk açılır.
+ * SQLite satırı burada oluşturulmaz.
  */
-async function startTrip() {
-  startInProgress = true; // KRİTİK: ilk await'ten ÖNCE, senkron olarak set edilir - bkz. dosya başı düzeltme notu.
+function startTrip() {
+  startInProgress = true;
   try {
-    const startedAt = Date.now();
-    const tripId = await createTrip(startedAt);
-
     active = {
-      tripId,
-      startedAt,
+      tripId: null,
+      startedAt: Date.now(),
       distanceKm: 0,
       maxSpeedKmh: 0,
       fuelUsedLiters: 0,
       lastPoint: null,
+      pendingPoints: [],
+      persistencePromise: null,
     };
 
     unsubscribePosition = onPosition(handleTripPosition);
     startFuelSampling();
-
-    logInfo('trip-recorder', `Yolculuk başladı (id: ${tripId})`);
-  } catch (error) {
-    logError('trip-recorder', 'Yolculuk başlatılamadı', error);
-    active = null;
+    logInfo('trip-recorder', 'Aday yolculuk başladı; 50 m hareket bekleniyor.');
   } finally {
     startInProgress = false;
   }
 }
 
-/**
- * Aktif yolculuğu bitirir: abonelikleri kaldırır, özet alanları hesaplayıp DB'ye yazar.
- * @returns {Promise<void>}
- */
+async function ensureTripPersisted(state) {
+  if (state.tripId != null) return state.tripId;
+  if (state.persistencePromise) return state.persistencePromise;
+  if (state.distanceKm < MIN_SAVE_DISTANCE_KM) return -1;
+
+  state.persistencePromise = (async () => {
+    const tripId = await createTrip(state.startedAt);
+    state.tripId = tripId;
+
+    const buffered = state.pendingPoints.splice(0);
+    for (const point of buffered) {
+      try {
+        await addTripPoint(tripId, point.lat, point.lng, point.speedKmh, point.at);
+      } catch (error) {
+        logWarn('trip-recorder', 'Bekleyen GPS noktası kaydedilemedi', error);
+      }
+    }
+
+    logInfo('trip-recorder', `Gerçek yolculuk kaydı açıldı (id: ${tripId}, ${round2(state.distanceKm)} km)`);
+    return tripId;
+  })().catch((error) => {
+    state.persistencePromise = null;
+    logError('trip-recorder', 'Yolculuk DB kaydı açılamadı', error);
+    return -1;
+  });
+
+  return state.persistencePromise;
+}
+
 async function stopTrip() {
   if (!active) return;
   const finished = active;
@@ -156,25 +140,21 @@ async function stopTrip() {
   unsubscribePosition = null;
   stopFuelSampling();
 
+  // Araç 50 m bile gitmediyse DB'de hiçbir satır oluşturulmaz.
+  if (finished.distanceKm < MIN_SAVE_DISTANCE_KM) {
+    logInfo('trip-recorder', `Hareketsiz/çok kısa oturum yok sayıldı (${round2(finished.distanceKm)} km)`);
+    return;
+  }
+
+  const tripId = await ensureTripPersisted(finished);
+  if (tripId < 0) return;
+
   const durationS = Math.round((Date.now() - finished.startedAt) / 1000);
   const durationHours = durationS / 3600;
   const avgSpeedKmh = durationHours > 0 ? finished.distanceKm / durationHours : 0;
 
-  // OBD bağlandı diye her oturumu yolculuk kabul etme. Araç garajda,
-  // park halinde veya sadece veri testi için bağlandıysa DB'ye 0 km kayıt
-  // yazılması engellenir. En az 250 m VEYA anlamlı hareket görülmüş olmalı.
-  if (finished.distanceKm < MIN_SAVE_DISTANCE_KM && finished.maxSpeedKmh < MIN_SAVE_SPEED_KMH) {
-    try {
-      await deleteTrip(finished.tripId);
-      logInfo('trip-recorder', `Hareketsiz/çok kısa oturum silindi (id: ${finished.tripId}, ${round2(finished.distanceKm)} km)`);
-    } catch (error) {
-      logError('trip-recorder', 'Kısa yolculuk kaydı silinemedi', error);
-    }
-    return;
-  }
-
   try {
-    await updateTripSummary(finished.tripId, {
+    await updateTripSummary(tripId, {
       end_time: Date.now(),
       distance_km: round2(finished.distanceKm),
       avg_speed_kmh: round2(avgSpeedKmh),
@@ -182,55 +162,48 @@ async function stopTrip() {
       fuel_used_l: round2(finished.fuelUsedLiters),
       duration_s: durationS,
     });
-    logInfo('trip-recorder', `Yolculuk bitti (id: ${finished.tripId}, ${round2(finished.distanceKm)} km)`);
+    logInfo('trip-recorder', `Yolculuk bitti (id: ${tripId}, ${round2(finished.distanceKm)} km)`);
   } catch (error) {
     logError('trip-recorder', 'Yolculuk özeti kaydedilemedi', error);
   }
 }
 
-/**
- * gps-tracker.js'ten gelen her yeni konumu işler: mesafe/hız istatistiklerini
- * günceller ve (throttle edilmiş) bir trip_points satırı ekler.
- * @param {import('../core/gps-tracker.js').LivePosition} position
- */
 function handleTripPosition(position) {
   if (!active) return;
-
+  const state = active;
   const { latitude, longitude, speedKmh } = position;
   const now = position.timestamp;
 
-  if (active.lastPoint) {
+  if (state.lastPoint) {
     const segmentKm = haversineDistanceKm(
-      active.lastPoint.lat, active.lastPoint.lng, latitude, longitude,
+      state.lastPoint.lat, state.lastPoint.lng, latitude, longitude,
     );
-    // GPS sıçramalarını (sinyal kaybı sonrası anlamsız uzun sıçrama) filtrele.
-    if (segmentKm < 1) {
-      active.distanceKm += segmentKm;
+    if (segmentKm < 1) state.distanceKm += segmentKm;
+  }
+
+  state.maxSpeedKmh = Math.max(state.maxSpeedKmh, speedKmh || 0);
+
+  const shouldPersistPoint = !state.lastPoint || now - state.lastPoint.at >= MIN_POINT_INTERVAL_MS;
+  state.lastPoint = { lat: latitude, lng: longitude, at: now };
+
+  if (shouldPersistPoint) {
+    const point = { lat: latitude, lng: longitude, speedKmh: speedKmh || 0, at: now };
+    if (state.tripId != null) {
+      addTripPoint(state.tripId, point.lat, point.lng, point.speedKmh, point.at).catch((error) => {
+        logWarn('trip-recorder', 'GPS noktası kaydedilemedi', error);
+      });
+    } else {
+      // Sadece hareket doğrulanana kadarki birkaç noktayı bellekte tut.
+      state.pendingPoints.push(point);
+      if (state.pendingPoints.length > 30) state.pendingPoints.shift();
     }
   }
 
-  active.maxSpeedKmh = Math.max(active.maxSpeedKmh, speedKmh);
-
-  const shouldPersistPoint = !active.lastPoint || now - active.lastPoint.at >= MIN_POINT_INTERVAL_MS;
-  active.lastPoint = { lat: latitude, lng: longitude, at: now };
-
-  if (shouldPersistPoint) {
-    addTripPoint(active.tripId, latitude, longitude, speedKmh, now).catch((error) => {
-      logWarn('trip-recorder', 'GPS noktası kaydedilemedi', error);
-    });
+  if (state.tripId == null && state.distanceKm >= MIN_SAVE_DISTANCE_KM) {
+    void ensureTripPersisted(state);
   }
 }
 
-/**
- * MAF tabanlı yakıt tüketimi örneklemesini başlatır.
- *
- * DÜZELTME: `setInterval`'ın async callback'i önceki turun bitmesini
- * BEKLEMEZ - komut kuyruğu yoğunken (birden fazla modül aynı ELM327 hattını
- * paylaşıyor) bir queryPid('10') çağrısı 3 saniyeden uzun sürebiliyordu,
- * bu da YENİ bir sorgunun ESKİSİ hâlâ beklerken kuyruğa eklenmesine, yani
- * tıkanıklığın kendi kendini beslemesine yol açıyordu. Artık bir örnekleme
- * hâlâ sürüyorsa yeni turlar sessizce atlanır.
- */
 function startFuelSampling() {
   let sampleInFlight = false;
 
@@ -238,14 +211,12 @@ function startFuelSampling() {
     if (!active || sampleInFlight) return;
     sampleInFlight = true;
     try {
-      const maf = await queryPid('10'); // g/s
+      const maf = await queryPid('10');
       if (!maf) return;
-
       const litersPerHour = (maf.value * 3600) / (STOICHIOMETRIC_AFR * FUEL_DENSITY_G_PER_L);
       const litersThisSample = litersPerHour * (FUEL_SAMPLE_INTERVAL_MS / 3600000);
       active.fuelUsedLiters += litersThisSample;
     } catch (error) {
-      // Tek bir örnekleme hatası kaydı bozmasın, sessizce atla.
       logWarn('trip-recorder', 'Yakıt örneklemesi başarısız', error);
     } finally {
       sampleInFlight = false;
@@ -260,10 +231,6 @@ function stopFuelSampling() {
   }
 }
 
-/**
- * @param {number} n
- * @returns {number} İki ondalık basamağa yuvarlanmış değer.
- */
 function round2(n) {
   return Math.round(n * 100) / 100;
 }
