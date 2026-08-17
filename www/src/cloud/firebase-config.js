@@ -57,8 +57,44 @@ export function normalizeFirebaseConfig(config) {
 }
 
 export function parseFirebaseConfigText(text) {
-  const parsed = JSON.parse(text);
-  return normalizeFirebaseConfig(parsed.firebaseConfig ?? parsed);
+  const raw = text?.trim() ?? '';
+  if (!raw) throw new Error('Yapılandırma metni boş.');
+
+  // 1. Doğrudan JSON dene
+  try {
+    const parsed = JSON.parse(raw);
+    return normalizeFirebaseConfig(parsed.firebaseConfig ?? parsed);
+  } catch {}
+
+  // 2. Firebase Console JS nesnesi: const firebaseConfig = { ... };
+  const braceMatch = raw.match(/\{[\s\S]*\}/);
+  if (braceMatch) {
+    try {
+      const jsonLike = braceMatch[0]
+        .replace(/\/\/.*$/gm, '')
+        .replace(/\/\*[\s\S]*?\*\//g, '')
+        .replace(/([{,]\s*)(\w+)\s*:/g, '$1"$2":')
+        .replace(/:\s*'([^']*)'/g, ': "$1"')
+        .replace(/,\s*([}\]])/g, '$1');
+      const parsed = JSON.parse(jsonLike);
+      return normalizeFirebaseConfig(parsed);
+    } catch {}
+  }
+
+  // 3. Regex ile alan alan çek (en toleranslı)
+  const extracted = {};
+  for (const key of FIREBASE_CONFIG_FIELDS) {
+    const match = raw.match(new RegExp('["\']?' + key + '["\']?\\s*:\\s*["\']([^"\']+)["\'"]'));
+    if (match) extracted[key] = match[1];
+  }
+  if (Object.keys(extracted).length > 0) {
+    return normalizeFirebaseConfig(extracted);
+  }
+
+  throw new Error(
+    'Firebase yapılandırması okunamadı. Firebase Console > Proje Ayarları > ' +
+    'Web uygulaması > "Yapılandırma" seçip tüm metni yapıştırın.'
+  );
 }
 
 export { DEFAULT_FIREBASE_CONFIG };
