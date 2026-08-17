@@ -4,7 +4,7 @@
  * navigation-drive view'ının kendi display:flex stilinin HTML hidden
  * özniteliğini ezmesini engeller.
  *
- * navigation-drive-view.js ekranı flex olarak tasarladığı için, hidden
+ * navigation-drive-view.js ekranı flex olarak tasarlandığı için, hidden
  * attribute tek başına yeterli değildir. Bu küçük koruma yalnızca ilgili
  * view üzerinde çalışır; diğer ekranlara müdahale etmez.
  * ---------------------------------------------------------------------------
@@ -37,6 +37,14 @@ function initNavigationDriveVisibilityFix() {
     subtree: true,
     attributes: true,
     attributeFilter: ['hidden'],
+  });
+
+  // Navigasyon sürüş ekranının heading-up yönlendirmesi uygulamanın ana
+  // bundle'ından bağımsız yüklenir. Böylece mevcut navigation-drive-view.js
+  // dosyasının çalışma mantığı değiştirilmeden Google Maps benzeri araç-yönü
+  // görünümü eklenir.
+  void import('../ui/navigation-orientation.js').catch((error) => {
+    console.warn('[navigation-orientation] modül yüklenemedi:', error);
   });
 }
 
