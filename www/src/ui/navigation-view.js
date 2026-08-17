@@ -25,6 +25,7 @@ import { logWarn } from '../core/logger.js';
 
 const DEFAULT_CENTER = [39.0, 35.0];
 const FUEL_CACHE_MAX_DISTANCE_KM = 5;
+const FUEL_SEARCH_RADIUS_M = 25000;
 
 const CATEGORY_VISUALS = {
   fuel: { icon: 'fuel', color: '#F7941E' },
@@ -84,29 +85,17 @@ export function initNavigationView() {
     return;
   }
 
-  map = L.map(mapElement, {
-    center: DEFAULT_CENTER,
-    zoom: 6,
-    zoomControl: true,
-    attributionControl: true,
-  });
-
+  map = L.map(mapElement, { center: DEFAULT_CENTER, zoom: 6, zoomControl: true, attributionControl: true });
   const streetLayer = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-    attribution: '© OpenStreetMap katkıda bulunanlar',
-    maxZoom: 19,
-    crossOrigin: true,
+    attribution: '© OpenStreetMap katkıda bulunanlar', maxZoom: 19, crossOrigin: true,
   }).addTo(map);
 
   streetLayer.on('tileerror', () => {
     const statusEl = container.querySelector('[data-status]');
-    if (statusEl && !statusEl.textContent) {
-      statusEl.textContent = 'Harita karoları yüklenemedi. İnternet bağlantınızı kontrol edin.';
-    }
+    if (statusEl && !statusEl.textContent) statusEl.textContent = 'Harita karoları yüklenemedi. İnternet bağlantınızı kontrol edin.';
   });
 
-  const resizeMap = () => {
-    try { map?.invalidateSize(true); } catch {}
-  };
+  const resizeMap = () => { try { map?.invalidateSize(true); } catch {} };
   requestAnimationFrame(resizeMap);
   setTimeout(resizeMap, 100);
   setTimeout(resizeMap, 350);
@@ -122,45 +111,26 @@ export function initNavigationView() {
   void ensureGpsTracking();
 
   bindPoiButtons(container);
-
   activeCategory = 'fuel';
   const initialFuelCache = getFuelStationCache();
   if (isFuelCacheRelevant(initialFuelCache, last)
       && (initialFuelCache.stations.length > 0 || initialFuelCache.prices.length > 0)) {
-    renderFuelPanel({
-      map,
-      container,
-      results: initialFuelCache.stations,
-      prices: initialFuelCache.prices,
-      location: initialFuelCache.location,
-      fetchedAt: initialFuelCache.fetchedAt,
-    });
+    renderFuelPanel({ map, container, results: initialFuelCache.stations, prices: initialFuelCache.prices, location: initialFuelCache.location, fetchedAt: initialFuelCache.fetchedAt });
   } else if (last) {
     void forceRefreshFuelStationCache();
   }
 
   const gpsDetailContainer = container.querySelector('[data-gps-detail]');
   if (gpsDetailContainer) mountGpsDetailCard(gpsDetailContainer);
-
-  container.querySelector('[data-offline-region-toggle]')?.addEventListener('click', () => {
-    openOfflineRegionPanel(map);
-  });
-
+  container.querySelector('[data-offline-region-toggle]')?.addEventListener('click', () => openOfflineRegionPanel(map));
   registerRefreshHandler('navigation', () => forceRefreshFuelStationCache());
-
   onViewChange((viewName) => {
-    if (viewName !== 'navigation' || !map) return;
-    requestAnimationFrame(() => map.invalidateSize());
+    if (viewName === 'navigation' && map) requestAnimationFrame(() => map.invalidateSize());
   });
 }
 
 function categoryLabel(category) {
-  const labels = {
-    fuel: 'Yakıt',
-    parking: 'Otopark',
-    service: 'Servis',
-    hospital: 'Hastane',
-  };
+  const labels = { fuel: 'Yakıt', parking: 'Otopark', service: 'Servis', hospital: 'Hastane' };
   return labels[category] ?? category;
 }
 
@@ -189,7 +159,6 @@ function bindPoiButtons(container) {
       const listEl = container.querySelector('[data-poi-list]');
       const priceTableEl = container.querySelector('[data-price-table]');
       const filterEl = container.querySelector('[data-brand-filter]');
-
       if (priceTableEl) priceTableEl.innerHTML = '';
       if (filterEl) filterEl.innerHTML = '';
       if (listEl) listEl.innerHTML = '';
@@ -209,38 +178,33 @@ function bindPoiButtons(container) {
       if (category === 'fuel') {
         const cached = getFuelStationCache();
         if (isFuelCacheRelevant(cached, current) && cached.stations.length > 0) {
-          renderFuelPanel({
-            map,
-            container,
-            results: cached.stations,
-            prices: cached.prices,
-            location: cached.location,
-            fetchedAt: cached.fetchedAt,
-          });
+          renderFuelPanel({ map, container, results: cached.stations, prices: cached.prices, location: cached.location, fetchedAt: cached.fetchedAt });
           const ageMinutes = Math.round((Date.now() - cached.fetchedAt) / 60000);
           const ageText = ageMinutes > 0 ? `${ageMinutes} dk önce güncellendi` : 'az önce güncellendi';
           const priceNote = cached.prices.length > 0 ? '' : ' · fiyat verisi güncelleniyor';
-          if (statusEl) statusEl.textContent = `${cached.stations.length} istasyon · ${ageText}${priceNote}`;
+          if (statusEl) statusEl.textContent = `${cached.stations.length} istasyon / 25 km · ${ageText}${priceNote}`;
           return;
         }
-
-        if (statusEl) statusEl.textContent = 'Yakındaki istasyonlar güncelleniyor...';
+        if (statusEl) statusEl.textContent = '25 km içindeki istasyonlar güncelleniyor...';
         void forceRefreshFuelStationCache();
       } else if (statusEl) {
         statusEl.textContent = 'Aranıyor...';
       }
 
-      let results = await findNearbyPoi(category, current.latitude, current.longitude, 7000);
-      if (results.length === 0) {
-        if (statusEl) statusEl.textContent = 'Yakında bulunamadı, arama genişletiliyor...';
-        results = await findNearbyPoi(category, current.latitude, current.longitude, 20000);
+      let results;
+      if (category === 'fuel') {
+        results = await findNearbyPoi('fuel', current.latitude, current.longitude, FUEL_SEARCH_RADIUS_M);
+      } else {
+        results = await findNearbyPoi(category, current.latitude, current.longitude, 7000);
+        if (results.length === 0) {
+          if (statusEl) statusEl.textContent = 'Yakında bulunamadı, arama genişletiliyor...';
+          results = await findNearbyPoi(category, current.latitude, current.longitude, 20000);
+        }
       }
 
       if (category === 'fuel') {
         const location = await reverseGeocodeIlIlce(current.latitude, current.longitude);
-        const prices = location
-          ? await getFuelPrices(location.il, location.ilce, current.longitude)
-          : [];
+        const prices = location ? await getFuelPrices(location.il, location.ilce, current.longitude) : [];
         renderFuelPanel({ map, container, results, prices, location, fetchedAt: Date.now() });
       } else {
         renderPoiMarkersAndList(results, listEl, statusEl, category);
@@ -252,43 +216,27 @@ function bindPoiButtons(container) {
     if (activeCategory !== 'fuel') return;
     const current = getLastPosition();
     if (!isFuelCacheRelevant(cached, current)) return;
-    renderFuelPanel({
-      map,
-      container,
-      results: cached.stations,
-      prices: cached.prices,
-      location: cached.location,
-      fetchedAt: cached.fetchedAt,
-    });
+    renderFuelPanel({ map, container, results: cached.stations, prices: cached.prices, location: cached.location, fetchedAt: cached.fetchedAt });
   });
 }
 
 function isFuelCacheRelevant(cached, current) {
   if (!cached?.fetchedForPosition) return !current;
   if (!current) return true;
-  return haversineKm(
-    cached.fetchedForPosition.lat,
-    cached.fetchedForPosition.lon,
-    current.latitude,
-    current.longitude,
-  ) <= FUEL_CACHE_MAX_DISTANCE_KM;
+  return haversineKm(cached.fetchedForPosition.lat, cached.fetchedForPosition.lon, current.latitude, current.longitude) <= FUEL_CACHE_MAX_DISTANCE_KM;
 }
 
 function haversineKm(lat1, lon1, lat2, lon2) {
   const R = 6371;
   const dLat = ((lat2 - lat1) * Math.PI) / 180;
   const dLon = ((lon2 - lon1) * Math.PI) / 180;
-  const a = Math.sin(dLat / 2) ** 2
-    + Math.cos((lat1 * Math.PI) / 180)
-    * Math.cos((lat2 * Math.PI) / 180)
-    * Math.sin(dLon / 2) ** 2;
+  const a = Math.sin(dLat / 2) ** 2 + Math.cos((lat1 * Math.PI) / 180) * Math.cos((lat2 * Math.PI) / 180) * Math.sin(dLon / 2) ** 2;
   return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
 }
 
 function renderPoiMarkersAndList(results, listEl, statusEl, category) {
   poiMarkers.forEach((marker) => map.removeLayer(marker));
   const visual = CATEGORY_VISUALS[category] ?? { color: '#4FD8E0' };
-
   poiMarkers = results.slice(0, 15).map((poi) => L.marker([poi.lat, poi.lon], {
     icon: L.divIcon({
       className: 'sda-poi-marker',
@@ -298,7 +246,6 @@ function renderPoiMarkersAndList(results, listEl, statusEl, category) {
   }).bindPopup(`${poi.name} (${poi.distanceKm.toFixed(1)} km)`).addTo(map));
 
   renderPoiList(listEl, results.slice(0, 15));
-
   if (results.length > 0) {
     const bounds = L.latLngBounds(results.slice(0, 15).map((poi) => [poi.lat, poi.lon]));
     map.fitBounds(bounds, { padding: [32, 32] });
