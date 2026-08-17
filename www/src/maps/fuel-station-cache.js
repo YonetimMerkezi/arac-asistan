@@ -1,24 +1,9 @@
 /**
  * fuel-station-cache.js
  * ---------------------------------------------------------------------------
- * Yakındaki akaryakıt istasyonlarını VE bölgenin güncel fiyat listesini
- * uygulama açılışında bir kez, ardından belirli aralıklarla arka planda
- * çekip BELLEKTE tutar. Harita ve Yakıt ekranları artık her dokunuşta canlı
- * ağ isteği beklemek yerine bu önbellekten ANINDA okur - "istasyonları çok
- * geç buluyor" şikayetinin çözümü budur.
- *
- * ARŞİV: Sadece "son bilinen konum" değil, ZİYARET EDİLEN HER İL/İLÇE ayrı
- * ayrı ve KALICI olarak diske kaydedilir (bkz. visitedRegions/STORAGE_KEY_
- * REGIONS). Daha önce gidilmiş bir bölgeye tekrar girildiğinde (il/ilçe
- * eşleşince), taze bir Overpass/fiyat çekimi beklemeden ARŞİVDEKİ sonuç
- * anında gösterilir; arka planda yine de tazelenir. Bu veri, Preferences
- * altında saklandığı için uygulamanın genel yedekleme sistemine (bkz.
- * data/backup-service.js - TÜM Preferences anahtarlarını otomatik yedekler)
- * otomatik dahildir, ayrıca bir şey yapmaya gerek yoktur.
- *
- * Konum önemli ölçüde değiştiğinde (>3km) veya periyodik aralıkta (15 dk)
- * kendini tazeler. Devam eden bir ağ isteği sırasında yeni konum gelirse
- * son yenileme isteği kuyruğa alınır; böylece hareket hâlinde veri eskimez.
+ * Yakındaki akaryakıt istasyonlarını ve bölgesel fiyatları arka planda tutar.
+ * İstasyon arama menzili 25 km'dir. Arşiv/önbellekten dönen istasyonlar her
+ * yeni GPS konumunda yeniden mesafelendirilir; 25 km dışındakiler gösterilmez.
  * ---------------------------------------------------------------------------
  */
 
@@ -29,62 +14,33 @@ import { getFuelPrices } from './fuel-price-service.js';
 import { Preferences } from '@capacitor/preferences';
 import { logInfo, logWarn } from '../core/logger.js';
 
-/** @type {string} Diske kaydedilen "en son aktif" önbelleğin anahtarı (geri uyumluluk + hızlı ilk açılış için). */
 const STORAGE_KEY = 'sda_fuel_station_cache_v1';
-
-/** @type {string} Ziyaret edilen TÜM bölgelerin kalıcı arşivinin anahtarı. */
 const STORAGE_KEY_REGIONS = 'sda_fuel_visited_regions_v1';
-
-/** @type {number} Periyodik tazeleme aralığı (ms). */
-const REFRESH_INTERVAL_MS = 15 * 60 * 1000; // 15 dakika
-
-/** @type {number} Bu mesafeden (km) fazla hareket edilirse süre dolmadan da tazelenir. */
+const REFRESH_INTERVAL_MS = 15 * 60 * 1000;
 const REFRESH_DISTANCE_KM = 3;
+const STATION_SEARCH_RADIUS_KM = 25;
+const STATION_SEARCH_RADIUS_M = STATION_SEARCH_RADIUS_KM * 1000;
 
 /**
  * @typedef {Object} FuelStationCache
  * @property {import('./poi-search.js').PoiResult[]} stations
  * @property {import('./fuel-price-service.js').FuelStationPrice[]} prices
  * @property {{il: string, ilce: string}|null} location
- * @property {number} fetchedAt - Date.now()
+ * @property {number} fetchedAt
  * @property {{lat: number, lon: number}|null} fetchedForPosition
  */
 
 /** @type {FuelStationCache} */
 let cache = { stations: [], prices: [], location: null, fetchedAt: 0, fetchedForPosition: null };
-
-/** @type {Object<string, FuelStationCache>} Ziyaret edilen her il/ilçe için ayrı kayıt (anahtar: bkz. regionKey()). */
 let visitedRegions = {};
-
-/** @type {Set<(cache: FuelStationCache) => void>} */
 const listeners = new Set();
-
-/** @type {boolean} */
 let refreshInProgress = false;
-
-/** @type {{lat:number, lon:number, forceRefresh:boolean}|null} Devam eden istek bittiğinde çalıştırılacak son konum isteği. */
 let queuedRefresh = null;
 
-/**
- * Bir il/ilçe çiftini arşiv anahtarına çevirir (büyük/küçük harf ve kenar
- * boşluğu farklarını yok sayar, aynı bölge farklı yazımlarla iki ayrı kayıt
- * oluşturmasın diye).
- * @param {{il: string, ilce: string}} location
- * @returns {string}
- */
 function regionKey(location) {
   return `${location.il}|${location.ilce}`.toLocaleLowerCase('tr').trim();
 }
 
-/**
- * Önbelleği başlatır: DİSKTEKİ son bilinen sonucu VE ziyaret edilen bölgeler
- * arşivini ANINDA belleğe yükler - böylece uygulama açılır açılmaz, ilk
- * GPS/ağ çekimi bitmeden önce bile Harita/Yakıt ekranları en son bulunan
- * istasyonları/fiyatları gösterebilir. Ardından normal akış devam eder:
- * konum geldiğinde taze bir çekim başlatılır (arka planda, kullanıcı
- * beklemeden) - eğer o bölge arşivde zaten varsa, ÖNCE arşivdeki hâli anında
- * gösterilir, tazeleme sessizce arkadan gelir.
- */
 export function initFuelStationCache() {
   void yukleDiskten();
 
@@ -100,9 +56,7 @@ export function initFuelStationCache() {
       cache.fetchedForPosition.lat, cache.fetchedForPosition.lon,
       position.latitude, position.longitude,
     );
-    if (movedKm > REFRESH_DISTANCE_KM) {
-      void refresh(position.latitude, position.longitude);
-    }
+    if (movedKm > REFRESH_DISTANCE_KM) void refresh(position.latitude, position.longitude);
   });
 
   setInterval(() => {
@@ -111,11 +65,6 @@ export function initFuelStationCache() {
   }, REFRESH_INTERVAL_MS);
 }
 
-/**
- * Diskte kayıtlı son bilinen önbelleği VE ziyaret edilen bölgeler arşivini
- * okuyup belleğe yükler ve dinleyicilere haber verir (varsa). Hiç kayıt
- * yoksa (ilk kurulum) sessizce hiçbir şey yapmaz.
- */
 async function yukleDiskten() {
   try {
     const [{ value: sonAktif }, { value: bolgeler }] = await Promise.all([
@@ -131,9 +80,12 @@ async function yukleDiskten() {
     if (sonAktif) {
       const kayitli = JSON.parse(sonAktif);
       if (kayitli && Array.isArray(kayitli.stations)) {
-        cache = kayitli;
-        logInfo('fuel-station-cache', `Diskten yüklendi: ${cache.stations.length} istasyon, ${cache.prices.length} fiyat kaydı (arşivde ${Object.keys(visitedRegions).length} bölge)`);
-        for (const listener of listeners) listener(getFuelStationCache());
+        const current = getLastPosition();
+        cache = current
+          ? { ...kayitli, stations: normalizeStationsForPosition(kayitli.stations, current.latitude, current.longitude) }
+          : kayitli;
+        logInfo('fuel-station-cache', `Diskten yüklendi: ${cache.stations.length} istasyon, ${cache.prices?.length ?? 0} fiyat kaydı`);
+        notify();
       }
     }
   } catch (error) {
@@ -141,12 +93,6 @@ async function yukleDiskten() {
   }
 }
 
-/**
- * Güncel önbelleği VE güncel bölge arşivini diske yazar (bir sonraki
- * açılışta/ziyarette anında gösterebilmek için). Yazma başarısız olursa
- * (ör. depolama dolu) sessizce yutulur - bellekteki hâli zaten kullanılmaya
- * devam eder.
- */
 async function diskeKaydet() {
   try {
     await Promise.all([
@@ -158,51 +104,34 @@ async function diskeKaydet() {
   }
 }
 
-/**
- * @returns {FuelStationCache}
- */
 export function getFuelStationCache() {
-  return { ...cache };
+  const current = getLastPosition();
+  if (!current) return { ...cache, stations: [...(cache.stations ?? [])] };
+  return {
+    ...cache,
+    stations: normalizeStationsForPosition(cache.stations ?? [], current.latitude, current.longitude),
+  };
 }
 
-/**
- * Şimdiye kadar ziyaret edilip arşivlenmiş TÜM bölgelerin listesini döndürür
- * (ör. ileride bir "Ziyaret Ettiğim Yerler" ekranı yapılmak istenirse).
- * @returns {FuelStationCache[]}
- */
 export function getVisitedRegions() {
   return Object.values(visitedRegions);
 }
 
-/**
- * Önbellek her tazelendiğinde çağrılacak dinleyici ekler.
- * @param {(cache: FuelStationCache) => void} callback
- * @returns {() => void}
- */
 export function onFuelStationCacheUpdate(callback) {
   listeners.add(callback);
   return () => listeners.delete(callback);
 }
 
-/**
- * Önbelleği hemen (bekleme aralığını yoksayarak) tazelemeye zorlar - ör.
- * kullanıcı Harita ekranında elle "yenile" isterse kullanılabilir.
- * forceRefresh=true, fuel-price-service.js'teki 10 dakikalık dahili önbelleği
- * de yoksayar - "elle yenile" düğmesi TTL dolmamış olsa bile taze veri
- * getirsin diye (bkz. navigation-fuel-panel.js "Fiyatları Güncelle" düğmesi).
- * @returns {Promise<void>}
- */
 export async function forceRefreshFuelStationCache() {
   const current = getLastPosition();
   if (current) await refresh(current.latitude, current.longitude, true);
 }
 
-/**
- * @param {number} lat
- * @param {number} lon
- * @param {boolean} [forceRefresh] - true ise fuel-price-service.js'teki
- *   10 dakikalık dahili fiyat önbelleğini de yoksayar.
- */
+function notify() {
+  const snapshot = getFuelStationCache();
+  for (const listener of listeners) listener(snapshot);
+}
+
 async function refresh(lat, lon, forceRefresh = false) {
   if (refreshInProgress) {
     queuedRefresh = {
@@ -215,49 +144,36 @@ async function refresh(lat, lon, forceRefresh = false) {
   refreshInProgress = true;
 
   try {
-    // ÖNEMLİ: konum çözümlemesi (reverse-geocode), istasyon araması
-    // (Overpass POI) VE fiyat çekimi (worker/yedek) birbirinden BAĞIMSIZ ve
-    // PARALEL çalışmalı. Önceki sürümde fiyat çekimi istasyon aramasının
-    // (özellikle sonuç boş çıkıp 20km'e genişleyen ikinci denemenin) BİTMESİNİ
-    // bekliyordu - "akaryakıt fiyatları çok geç geliyor" şikayetinin kök
-    // nedeni buydu, çünkü fiyatlar aslında istasyon aramasından çoğu zaman
-    // çok daha hızlı geliyor. Artık ikisi eşzamanlı başlar; fiyatlar hazır
-    // olur olmaz (istasyonları beklemeden) AYRICA bir ara güncelleme
-    // yayınlanır (aşağıda), böylece kullanıcı konumuna göre o il/ilçenin
-    // fiyat tablosunu istasyon işaretçilerinden önce görebilir.
     const geocodePromise = reverseGeocodeIlIlce(lat, lon).catch((error) => {
       logWarn('fuel-station-cache', 'Konum çözümlenemedi (il/ilçe)', error);
       return null;
     });
 
-    // Bölge arşivi kontrolü: konum çözülür çözülmez (istasyon aramasını
-    // beklemeden) bu bölge daha önce ziyaret edildiyse arşivdeki sonuç
-    // anında gösterilir.
-    void geocodePromise.then((erkenLocation) => {
-      if (!erkenLocation) return;
-      const arsivKaydi = visitedRegions[regionKey(erkenLocation)];
-      if (arsivKaydi) {
-        cache = { ...arsivKaydi, fetchedForPosition: { lat, lon } };
-        logInfo('fuel-station-cache', `Arşivden anında gösterildi: ${erkenLocation.il}/${erkenLocation.ilce}`);
-        for (const listener of listeners) listener(getFuelStationCache());
-      }
+    // Aynı il/ilçe daha önce ziyaret edildiyse ağ beklenmeden göster; fakat
+    // istasyonları ESKİ konum mesafeleriyle kullanma.
+    void geocodePromise.then((location) => {
+      if (!location) return;
+      const archived = visitedRegions[regionKey(location)];
+      if (!archived) return;
+      cache = {
+        ...archived,
+        stations: normalizeStationsForPosition(archived.stations ?? [], lat, lon),
+        fetchedForPosition: { lat, lon },
+      };
+      logInfo('fuel-station-cache', `Arşiv yeniden mesafelendirildi: ${location.il}/${location.ilce} (${cache.stations.length} istasyon / ${STATION_SEARCH_RADIUS_KM} km)`);
+      notify();
     });
 
-    const stationsPromise = (async () => {
-      let stations = await findNearbyPoi('fuel', lat, lon, 7000);
-      if (stations.length === 0) {
-        stations = await findNearbyPoi('fuel', lat, lon, 20000);
-      }
-      return stations;
-    })();
+    // Kullanıcının istediği gerçek arama menzili: doğrudan 25 km.
+    const stationsPromise = findNearbyPoi('fuel', lat, lon, STATION_SEARCH_RADIUS_M)
+      .then((stations) => normalizeStationsForPosition(stations, lat, lon));
 
     const pricesPromise = geocodePromise.then((location) => (
       location ? getFuelPrices(location.il, location.ilce, lon, forceRefresh) : []
     ));
 
-    // Fiyatlar istasyonlardan önce geldiyse ara güncelleme yayınla. Ancak
-    // konum 3 km'den fazla değişmişse önceki bölgenin istasyonlarını yeni
-    // bölgenin fiyatlarıyla birleştirme; işaretçileri geçici olarak boşalt.
+    // Fiyatlar istasyonlardan önce gelebilir. Eski konumdan kalan işaretçileri
+    // yeni konum fiyatlarıyla karıştırma; yalnızca aynı 3 km alanındaysa koru.
     void Promise.all([geocodePromise, pricesPromise]).then(([location, prices]) => {
       if (!location) return;
       const previous = cache.fetchedForPosition;
@@ -266,13 +182,13 @@ async function refresh(lat, lon, forceRefresh = false) {
         : false;
       cache = {
         ...cache,
-        stations: sameArea ? cache.stations : [],
+        stations: sameArea ? normalizeStationsForPosition(cache.stations ?? [], lat, lon) : [],
         location,
         prices,
         fetchedAt: Date.now(),
         fetchedForPosition: { lat, lon },
       };
-      for (const listener of listeners) listener(getFuelStationCache());
+      notify();
     });
 
     const [stations, location, prices] = await Promise.all([stationsPromise, geocodePromise, pricesPromise]);
@@ -285,16 +201,12 @@ async function refresh(lat, lon, forceRefresh = false) {
       fetchedForPosition: { lat, lon },
     };
 
-    if (location) {
-      visitedRegions[regionKey(location)] = { ...cache };
-    }
+    if (location) visitedRegions[regionKey(location)] = { ...cache, stations: [...stations] };
 
-    logInfo('fuel-station-cache', `Önbellek tazelendi: ${stations.length} istasyon, ${prices.length} fiyat kaydı`);
-    for (const listener of listeners) listener(getFuelStationCache());
+    logInfo('fuel-station-cache', `Önbellek tazelendi: ${stations.length} istasyon (${STATION_SEARCH_RADIUS_KM} km), ${prices.length} fiyat kaydı`);
+    notify();
     void diskeKaydet();
 
-    // İstasyonlar bulundu ama fiyat verisi boş geldiyse (ör. geçici bir ağ
-    // aksaklığı), 15 dakika beklemeden kısa süre sonra bir kez daha dene.
     if (stations.length > 0 && prices.length === 0) {
       setTimeout(() => void refresh(lat, lon), 30 * 1000);
     }
@@ -309,20 +221,25 @@ async function refresh(lat, lon, forceRefresh = false) {
       const stillNeedsRefresh = pending.forceRefresh || !fetched || haversineKm(
         fetched.lat, fetched.lon, pending.lat, pending.lon,
       ) > REFRESH_DISTANCE_KM;
-      if (stillNeedsRefresh) {
-        void refresh(pending.lat, pending.lon, pending.forceRefresh);
-      }
+      if (stillNeedsRefresh) void refresh(pending.lat, pending.lon, pending.forceRefresh);
     }
   }
 }
 
-/**
- * @param {number} lat1
- * @param {number} lon1
- * @param {number} lat2
- * @param {number} lon2
- * @returns {number}
- */
+function normalizeStationsForPosition(stations, lat, lon) {
+  return (Array.isArray(stations) ? stations : [])
+    .map((station) => {
+      const stationLat = Number(station?.lat);
+      const stationLon = Number(station?.lon);
+      if (!Number.isFinite(stationLat) || !Number.isFinite(stationLon)) return null;
+      const distanceKm = haversineKm(lat, lon, stationLat, stationLon);
+      if (distanceKm > STATION_SEARCH_RADIUS_KM) return null;
+      return { ...station, lat: stationLat, lon: stationLon, distanceKm };
+    })
+    .filter(Boolean)
+    .sort((a, b) => a.distanceKm - b.distanceKm);
+}
+
 function haversineKm(lat1, lon1, lat2, lon2) {
   const R = 6371;
   const dLat = ((lat2 - lat1) * Math.PI) / 180;
