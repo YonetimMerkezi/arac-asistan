@@ -17,7 +17,8 @@
  * otomatik dahildir, ayrıca bir şey yapmaya gerek yoktur.
  *
  * Konum önemli ölçüde değiştiğinde (>3km) veya periyodik aralıkta (15 dk)
- * kendini tazeler.
+ * kendini tazeler. Devam eden bir ağ isteği sırasında yeni konum gelirse
+ * son yenileme isteği kuyruğa alınır; böylece hareket hâlinde veri eskimez.
  * ---------------------------------------------------------------------------
  */
 
@@ -60,6 +61,9 @@ const listeners = new Set();
 
 /** @type {boolean} */
 let refreshInProgress = false;
+
+/** @type {{lat:number, lon:number, forceRefresh:boolean}|null} Devam eden istek bittiğinde çalıştırılacak son konum isteği. */
+let queuedRefresh = null;
 
 /**
  * Bir il/ilçe çiftini arşiv anahtarına çevirir (büyük/küçük harf ve kenar
@@ -200,7 +204,14 @@ export async function forceRefreshFuelStationCache() {
  *   10 dakikalık dahili fiyat önbelleğini de yoksayar.
  */
 async function refresh(lat, lon, forceRefresh = false) {
-  if (refreshInProgress) return;
+  if (refreshInProgress) {
+    queuedRefresh = {
+      lat,
+      lon,
+      forceRefresh: Boolean(forceRefresh || queuedRefresh?.forceRefresh),
+    };
+    return;
+  }
   refreshInProgress = true;
 
   try {
@@ -244,12 +255,23 @@ async function refresh(lat, lon, forceRefresh = false) {
       location ? getFuelPrices(location.il, location.ilce, lon, forceRefresh) : []
     ));
 
-    // Fiyatlar (genelde çok daha hızlı) hazır olur olmaz, istasyon aramasını
-    // beklemeden bir ARA güncelleme yayınla - önceki `stations` listesi
-    // (varsa) korunur, yalnızca location/prices/fetchedAt tazelenir.
+    // Fiyatlar istasyonlardan önce geldiyse ara güncelleme yayınla. Ancak
+    // konum 3 km'den fazla değişmişse önceki bölgenin istasyonlarını yeni
+    // bölgenin fiyatlarıyla birleştirme; işaretçileri geçici olarak boşalt.
     void Promise.all([geocodePromise, pricesPromise]).then(([location, prices]) => {
       if (!location) return;
-      cache = { ...cache, location, prices, fetchedAt: Date.now(), fetchedForPosition: { lat, lon } };
+      const previous = cache.fetchedForPosition;
+      const sameArea = previous
+        ? haversineKm(previous.lat, previous.lon, lat, lon) <= REFRESH_DISTANCE_KM
+        : false;
+      cache = {
+        ...cache,
+        stations: sameArea ? cache.stations : [],
+        location,
+        prices,
+        fetchedAt: Date.now(),
+        fetchedForPosition: { lat, lon },
+      };
       for (const listener of listeners) listener(getFuelStationCache());
     });
 
@@ -280,6 +302,17 @@ async function refresh(lat, lon, forceRefresh = false) {
     logWarn('fuel-station-cache', 'Önbellek tazeleme başarısız', error);
   } finally {
     refreshInProgress = false;
+    const pending = queuedRefresh;
+    queuedRefresh = null;
+    if (pending) {
+      const fetched = cache.fetchedForPosition;
+      const stillNeedsRefresh = pending.forceRefresh || !fetched || haversineKm(
+        fetched.lat, fetched.lon, pending.lat, pending.lon,
+      ) > REFRESH_DISTANCE_KM;
+      if (stillNeedsRefresh) {
+        void refresh(pending.lat, pending.lon, pending.forceRefresh);
+      }
+    }
   }
 }
 
