@@ -32,6 +32,46 @@ function injectCss(){if(el('ndv-style'))return;const s=document.createElement('s
 
 function initMap(lat,lon){if(S.map)return;const c=el('ndv-map');if(!c)return;S.map=L.map(c,{center:[lat,lon],zoom:17,zoomControl:true,attributionControl:true,preferCanvas:true});L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:20,attribution:'© OpenStreetMap'}).addTo(S.map);S.vehicleMarker=L.marker([lat,lon],{icon:vehicleIcon(0),zIndexOffset:1000}).addTo(S.map);S.map.on('dragstart',()=>{if(S.navigationActive){S.follow=false;el('ndv-follow-btn')?.classList.remove('active')}});S.map.on('click',async e=>{if(!S.pendingFavorite)return;const id=S.pendingFavorite,label=id==='home'?'Ev':'İş';S.pendingFavorite=null;S.follow=false;if(S.favoriteMarker)S.map.removeLayer(S.favoriteMarker);S.favoriteMarker=L.marker(e.latlng).addTo(S.map).bindPopup(`${label} olarak kaydedildi`).openPopup();try{await setFavoriteLocation({id,label,lat:e.latlng.lat,lon:e.latlng.lng});msg(`${label} konumu haritada seçtiğiniz noktaya kaydedildi.`)}catch{msg(`${label} konumu kaydedilemedi.`)}});[0,100,300,700].forEach(t=>setTimeout(()=>S.map?.invalidateSize(true),t));el('ndv-loading')?.classList.add('hidden');
   attachRotateGesture(c);
+  patchDragging(S.map);
+}
+
+/**
+ * Leaflet dragging'i devre dışı bırakıp kendi tek-parmak pan handler'ımızı
+ * kurarız. Delta'yı haritanın mevcut açısına göre ters döndürünce parmak
+ * hangi yönde giderse harita o yöne gider.
+ */
+function patchDragging(map){
+  if(!map)return;
+  // Leaflet'in kendi sürükleme sistemini kapat
+  map.dragging.disable();
+
+  const container=map.getContainer();
+  let panStart=null; // {x,y} — tek parmak dokunma başlangıcı
+
+  container.addEventListener('touchstart',e=>{
+    // İki parmak: döndürme gesture'ı — pan'ı başlatma
+    if(e.touches.length!==1){panStart=null;return;}
+    panStart={x:e.touches[0].clientX, y:e.touches[0].clientY};
+  },{passive:true});
+
+  container.addEventListener('touchmove',e=>{
+    if(e.touches.length!==1||!panStart)return;
+    const cx=e.touches[0].clientX, cy=e.touches[0].clientY;
+    let dx=cx-panStart.x, dy=cy-panStart.y;
+    panStart={x:cx,y:cy};
+
+    // Haritanın mevcut açısına göre delta'yı ters döndür
+    const bearing=(S.manualBearing??S.heading??0)*Math.PI/180;
+    const cos=Math.cos(bearing), sin=Math.sin(bearing);
+    const rdx= dx*cos + dy*sin;
+    const rdy=-dx*sin + dy*cos;
+
+    // Leaflet koordinat sistemine çevir: piksel → coğrafi kaydırma
+    map.panBy([-rdx,-rdy],{animate:false,noMoveStart:true});
+  },{passive:true});
+
+  container.addEventListener('touchend',()=>{panStart=null;},{passive:true});
+  container.addEventListener('touchcancel',()=>{panStart=null;},{passive:true});
 }
 
 function attachRotateGesture(mapEl){
@@ -82,7 +122,27 @@ function applyMapRotation(deg){
 }
 function vehicleIcon(h){return L.divIcon({className:'',html:`<div style="width:0;height:0;border-left:10px solid transparent;border-right:10px solid transparent;border-bottom:28px solid #ff7a18;transform:rotate(${h}deg);filter:drop-shadow(0 2px 4px #0008)"></div>`,iconSize:[20,28],iconAnchor:[10,14]})}
 function hav(a,b){const R=6371,dLat=(b.lat-a.lat)*Math.PI/180,dLon=(b.lon-a.lon)*Math.PI/180,la=a.lat*Math.PI/180,lb=b.lat*Math.PI/180,x=Math.sin(dLat/2)**2+Math.cos(la)*Math.cos(lb)*Math.sin(dLon/2)**2;return R*2*Math.atan2(Math.sqrt(x),Math.sqrt(1-x))}
-function smoothHeading(next){let d=((next-S.heading+540)%360)-180;S.heading=(S.heading+d*.28+360)%360;return S.heading}
+function smoothHeading(next){
+  let d=((next-S.heading+540)%360)-180;
+  S.heading=(S.heading+d*.28+360)%360;
+  return S.heading;
+}
+
+// Rota üzerinde mevcut konumdan bir sonraki noktaya bearing hesapla
+function routeBearing(posLat,posLon){
+  if(!S.routeCoords.length)return null;
+  const idx=S.routeProgressIndex||0;
+  // Birkaç nokta ilerisine bak (anlık titremeleri önler)
+  const lookahead=Math.min(idx+8, S.routeCoords.length-1);
+  const target=S.routeCoords[lookahead];
+  if(!target)return null;
+  const dLat=(target[0]-posLat)*Math.PI/180;
+  const dLon=(target[1]-posLon)*Math.PI/180;
+  const lat1=posLat*Math.PI/180, lat2=target[0]*Math.PI/180;
+  const x=Math.sin(dLon)*Math.cos(lat2);
+  const y=Math.cos(lat1)*Math.sin(lat2)-Math.sin(lat1)*Math.cos(lat2)*Math.cos(dLon);
+  return(Math.atan2(x,y)*180/Math.PI+360)%360;
+}
 function nearestRoute(lat,lon){if(!S.routeCoords.length)return null;let best=S.routeProgressIndex||0,bestD=Infinity,start=Math.max(0,best-15),end=Math.min(S.routeCoords.length-1,best+100);for(let i=start;i<=end;i++){const c=S.routeCoords[i],d=hav({lat,lon},{lat:c[0],lon:c[1]});if(d<bestD){bestD=d;best=i}}S.routeProgressIndex=best;return {index:best,distance:bestD}}
 function formatDist(km){return km<1?`${Math.max(0,Math.round(km*1000))} m`:`${km.toFixed(km<10?1:0)} km`}
 function updateCamera(lat,lon,speed){if(!S.map||!S.navigationActive||!S.follow)return;const step=S.routeSteps[S.stepIndex];const d=step?.distanceToTurnKm??999;let z=d<.12?19:d<.3?18:d<.8?17:speed>80?15.5:16.5;z=Math.max(14.5,Math.min(19,z));if(Math.abs(z-(S.lastZoom??z))>.25||Date.now()-S.zoomAt>3500){S.map.setZoom(z,{animate:true});S.lastZoom=z;S.zoomAt=Date.now()}S.map.panTo([lat,lon],{animate:true,duration:.35});// Navigasyon aktifken araç yönüne göre döndür; elle döndürme devre dışı
@@ -98,7 +158,24 @@ function resetMapBearing(){
 function updateRouteProgress(pos){const n=nearestRoute(pos.latitude,pos.longitude);if(!n)return;const remain=Math.max(0,S.routeTotal-S.routeCum[n.index]);set('ndv-stat-dist',formatDist(remain));const kmh=Math.max(5,pos.speedKmh||0);const eta=new Date(Date.now()+remain/kmh*60*60*1000);set('ndv-stat-eta',`${String(eta.getHours()).padStart(2,'0')}:${String(eta.getMinutes()).padStart(2,'0')}`);for(let i=S.stepIndex;i<S.routeSteps.length;i++){const st=S.routeSteps[i],d=Math.max(0,S.routeCum[Math.min(n.index,S.routeCum.length-1)]),stepEnd=st.routeEndKm??d+st.distanceKm;if(stepEnd-d<.02){S.stepIndex=i+1;continue}st.distanceToTurnKm=Math.max(0,stepEnd-d);break}const st=S.routeSteps[S.stepIndex];if(st){set('ndv-turn-distance',formatDist(st.distanceToTurnKm??0));set('ndv-turn-instruction',st.instruction||'İlerleyin');set('ndv-turn-road',st.name||'');set('ndv-turn-arrow',turnArrow(st.maneuver));show('ndv-turn-card','flex')}else if(remain<.03)finishNavigation()}
 function turnArrow(m){const s=String(m||'').toLowerCase();if(s.includes('left')||s.includes('sol'))return'↰';if(s.includes('right')||s.includes('sağ'))return'↱';if(s.includes('uturn')||s.includes('geri'))return'↶';if(s.includes('roundabout')||s.includes('dönel'))return'↻';return'↑'}
 function speakNav(text){if(!text||Date.now()-S.ttsAt<6500)return;S.ttsAt=Date.now();import('../voice/tts.js').then(m=>m.speak?.(text)).catch(()=>{})}
-function onPositionUpdate(pos){S.lastPos=pos;if(!S.map)initMap(pos.latitude,pos.longitude);const spd=Math.round(pos.speedKmh||0);set('ndv-speed-val',spd);set('ndv-stat-speed',spd);let h=Number(pos.headingDeg);if(!Number.isFinite(h)||((pos.speedKmh||0)<5))h=S.heading;else h=smoothHeading(h);S.vehicleMarker?.setLatLng([pos.latitude,pos.longitude]);S.vehicleMarker?.setIcon(vehicleIcon(S.navigationActive?0:h));if(S.navigationActive){updateRouteProgress(pos);updateCamera(pos.latitude,pos.longitude,spd);const nr=nearestRoute(pos.latitude,pos.longitude);if(nr&&nr.distance>.06){if(!S.deviationSince)S.deviationSince=Date.now();if(Date.now()-S.deviationSince>2500&&!S.rerouteBusy)reroute()}else S.deviationSince=0}else if(S.follow&&!S.pendingFavorite){S.map?.panTo([pos.latitude,pos.longitude],{animate:true,duration:.35});if(!S.manualRotate)applyMapRotation(0);}getSpeedLimit(pos.latitude,pos.longitude);checkCameras()}
+function onPositionUpdate(pos){S.lastPos=pos;if(!S.map)initMap(pos.latitude,pos.longitude);const spd=Math.round(pos.speedKmh||0);set('ndv-speed-val',spd);set('ndv-stat-speed',spd);let h=Number(pos.headingDeg);
+  if(!Number.isFinite(h)||(pos.speedKmh||0)<3) h=S.heading; // dur/yavaş: mevcut koru
+  else {
+    h=smoothHeading(h);
+    // Navigasyon aktifse rota bearing'iyle blend et (GPS sinyal kaymasına karşı)
+    if(S.navigationActive && S.routeCoords.length){
+      const rb=routeBearing(pos.latitude,pos.longitude);
+      if(rb!==null){
+        // Hız arttıkça GPS heading'e güven artar, yavaşta rotaya güven
+        const gpsWeight=Math.min(1,Math.max(0,((pos.speedKmh||0)-5)/40));
+        const routeWeight=1-gpsWeight;
+        // Açı ortalaması (wrap-around güvenli)
+        const diff=((rb-h+540)%360)-180;
+        h=(h+diff*routeWeight*0.4+360)%360;
+        S.heading=h;
+      }
+    }
+  }S.vehicleMarker?.setLatLng([pos.latitude,pos.longitude]);S.vehicleMarker?.setIcon(vehicleIcon(S.navigationActive?0:h));if(S.navigationActive){updateRouteProgress(pos);updateCamera(pos.latitude,pos.longitude,spd);const nr=nearestRoute(pos.latitude,pos.longitude);if(nr&&nr.distance>.06){if(!S.deviationSince)S.deviationSince=Date.now();if(Date.now()-S.deviationSince>2500&&!S.rerouteBusy)reroute()}else S.deviationSince=0}else if(S.follow&&!S.pendingFavorite){S.map?.panTo([pos.latitude,pos.longitude],{animate:true,duration:.35});if(!S.manualRotate)applyMapRotation(0);}getSpeedLimit(pos.latitude,pos.longitude);checkCameras()}
 async function getSpeedLimit(lat,lon){
   if(Date.now()-(S.speedLimitAt||0)<15000)return;
   S.speedLimitAt=Date.now();
