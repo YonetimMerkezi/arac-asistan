@@ -181,8 +181,8 @@ function injectCss() {
   flex-direction: column;
   height: 100%;
   overflow: hidden;
-  background: var(--sda-bg-base, #0b0e13);
-  color: var(--sda-text-primary, #fff);
+  background: var(--sda-bg-base);
+  color: var(--sda-text-primary);
   box-sizing: border-box;
 }
 #ndv-root {
@@ -205,32 +205,33 @@ function injectCss() {
   min-width: 0;
   padding: 11px 13px;
   border-radius: 13px;
-  border: 1px solid rgba(255,255,255,.12);
-  background: rgba(255,255,255,.06);
-  color: #fff;
+  border: 1px solid var(--sda-hairline);
+  background: var(--sda-bg-elevated);
+  color: var(--sda-text-primary);
   font-size: 14px;
   outline: none;
 }
-#ndv-input::placeholder { color: rgba(255,255,255,.35); }
+#ndv-input::placeholder { color: var(--sda-text-faint); }
 .ndv-btn { border: none; border-radius: 12px; padding: 0 16px; font-weight: 700; cursor: pointer; color: #fff; }
 .ndv-btn--green { background: #16a34a; }
 /* Öneriler */
 #ndv-suggestions {
   display: none;
   flex: 0 0 auto;
-  background: var(--sda-bg-elevated, #1c1f26);
+  background: var(--sda-bg-elevated);
   border-radius: 10px;
   overflow: hidden;
   max-height: 160px;
   overflow-y: auto;
+  border: 1px solid var(--sda-hairline);
 }
 #ndv-suggestions button {
   display: block; width: 100%; text-align: left;
   padding: 10px 13px; background: none; border: none;
-  border-bottom: 1px solid rgba(255,255,255,.06);
-  color: #fff; font-size: 13px; cursor: pointer;
+  border-bottom: 1px solid var(--sda-hairline);
+  color: var(--sda-text-primary); font-size: 13px; cursor: pointer;
 }
-#ndv-suggestions button:hover { background: rgba(255,255,255,.07); }
+#ndv-suggestions button:hover { background: var(--sda-bg-elevated-hover); }
 /* Harita */
 #ndv-map-wrap {
   position: relative;
@@ -238,8 +239,8 @@ function injectCss() {
   min-height: 0;
   border-radius: 16px;
   overflow: hidden;
-  background: #17202a;
-  border: 1px solid rgba(255,255,255,.08);
+  background: var(--sda-bg-surface);
+  border: 1px solid var(--sda-hairline);
 }
 #ndv-map {
   position: absolute !important;
@@ -275,12 +276,12 @@ function injectCss() {
 #ndv-speed-dial {
   width: 60px; height: 60px; border-radius: 50%;
   background: rgba(20,23,30,.88);
-  border: 3px solid rgba(255,255,255,.18);
+  border: 3px solid rgba(255,255,255,.25);
   display: flex; flex-direction: column;
   align-items: center; justify-content: center;
 }
 #ndv-speed-val { font-size: 20px; font-weight: 800; line-height: 1; color: #fff; }
-#ndv-speed-dial small { font-size: 8px; color: rgba(255,255,255,.5); }
+#ndv-speed-dial small { font-size: 8px; color: rgba(255,255,255,.6); }
 #ndv-limit-badge {
   width: 46px; height: 46px; border-radius: 50%;
   background: #fff;
@@ -301,7 +302,7 @@ function injectCss() {
   width: 40px; height: 40px; border-radius: 50%;
   border: none; background: rgba(20,23,30,.88);
   color: #fff; font-size: 18px; cursor: pointer;
-  box-shadow: 0 2px 8px rgba(0,0,0,.4);
+  box-shadow: var(--sda-shadow-elevated);
 }
 #ndv-follow-btn.active { outline: 2px solid #22c55e; }
 /* Stats */
@@ -312,34 +313,35 @@ function injectCss() {
   flex: 0 0 auto;
 }
 .ndv-stat {
-  background: rgba(255,255,255,.055);
+  background: var(--sda-bg-elevated);
+  border: 1px solid var(--sda-hairline);
   border-radius: 10px;
   padding: 7px 4px;
   text-align: center;
 }
-.ndv-stat span { display: block; font-size: 7px; opacity: .5; }
-.ndv-stat strong { display: block; font-size: 14px; font-weight: 800; margin: 2px 0; }
-.ndv-stat small { display: block; font-size: 7px; opacity: .5; }
+.ndv-stat span { display: block; font-size: 7px; color: var(--sda-text-muted); }
+.ndv-stat strong { display: block; font-size: 14px; font-weight: 800; margin: 2px 0; color: var(--sda-text-primary); }
+.ndv-stat small { display: block; font-size: 7px; color: var(--sda-text-muted); }
 /* Kısa yollar */
 #ndv-shortcuts {
   display: flex; gap: 6px; flex: 0 0 auto;
 }
 #ndv-shortcuts button {
-  flex: 1; border: none; border-radius: 10px;
+  flex: 1; border: 1px solid var(--sda-hairline); border-radius: 10px;
   padding: 8px 4px; font-size: 10px; font-weight: 600;
-  background: rgba(255,255,255,.08); color: #fff; cursor: pointer;
+  background: var(--sda-bg-elevated); color: var(--sda-text-primary); cursor: pointer;
 }
 /* Rota özeti */
 #ndv-summary {
   display: flex; align-items: center; gap: 8px; flex: 0 0 auto;
-  background: rgba(255,255,255,.07); border-radius: 10px; padding: 8px 12px;
-  font-size: 12px;
+  background: var(--sda-bg-elevated); border: 1px solid var(--sda-hairline);
+  border-radius: 10px; padding: 8px 12px; font-size: 12px;
 }
 #ndv-sum-label { flex: 1; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 #ndv-sum-dist, #ndv-sum-dur { opacity: .7; white-space: nowrap; }
 #ndv-cancel-btn { border: none; background: rgba(255,80,80,.2); color: #ff5a5f; border-radius: 8px; padding: 4px 8px; font-size: 11px; cursor: pointer; }
 /* Mesaj */
-#ndv-msg { flex: 0 0 auto; font-size: 10px; opacity: .5; text-align: center; margin: 2px 0 6px 0; }
+#ndv-msg { flex: 0 0 auto; font-size: 10px; color: var(--sda-text-muted); text-align: center; margin: 2px 0 6px 0; }
 
 /* Leaflet attribution küçük ekranda taşmasın */
 #ndv-map .leaflet-control-attribution { font-size: 9px; }
