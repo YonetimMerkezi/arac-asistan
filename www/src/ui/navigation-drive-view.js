@@ -79,7 +79,7 @@ function ensureLayout() {
 
   <!-- Arama satırı -->
   <div id="ndv-search-row">
-    <input id="ndv-input" type="search" placeholder="Nereye gidiyorsun?" autocomplete="off" />
+    <input id="ndv-input" type="search" placeholder="🔍 Nereye gidiyorsun?" autocomplete="off" />
     <button id="ndv-search-btn" class="ndv-btn ndv-btn--green">Ara</button>
   </div>
 
@@ -97,10 +97,10 @@ function ensureLayout() {
       <span id="ndv-loading-text">Konum alınıyor…</span>
     </div>
 
-    <!-- Hız + limit overlay (sol üst, Leaflet zoom kontrolünün yanı sıra) -->
+    <!-- Hız + limit overlay -->
     <div id="ndv-speed-overlay">
       <div id="ndv-speed-dial">
-        <span id="ndv-speed-val">--</span>
+        <span id="ndv-speed-val">0</span>
         <small>km/sa</small>
       </div>
       <div id="ndv-limit-badge">
@@ -112,7 +112,7 @@ function ensureLayout() {
     <div id="ndv-camera-badge" style="display:none;">📸 Radar</div>
 
     <!-- Takip butonu -->
-    <button id="ndv-follow-btn" class="ndv-map-btn" title="Araç takibi">◎</button>
+    <button id="ndv-follow-btn" title="Araç takibi">◎</button>
   </div>
 
   <!-- İstatistik barı -->
@@ -144,18 +144,23 @@ function ensureLayout() {
     </div>
   </div>
 
-  <!-- Kısa yollar -->
+  <!-- Kısa yollar (rota yokken görünür) -->
   <div id="ndv-shortcuts">
     <button data-dest="locate">📍 Konum</button>
     <button data-dest="home">🏠 Ev</button>
     <button data-dest="work">💼 İş</button>
   </div>
 
-  <!-- Rota özeti (rota aktifken gösterilir) -->
-  <div id="ndv-summary" style="display:none;">
+  <!-- Rota özeti (rota bulunduktan sonra görünür) -->
+  <div id="ndv-summary">
     <span id="ndv-sum-label">--</span>
     <span id="ndv-sum-dist">--</span>
     <span id="ndv-sum-dur">--</span>
+  </div>
+
+  <!-- Başla / İptal buton satırı (rota bulunduktan sonra görünür) -->
+  <div id="ndv-action-row">
+    <button id="ndv-start-btn">🚗 Başla</button>
     <button id="ndv-cancel-btn">✕ İptal</button>
   </div>
 
@@ -177,177 +182,151 @@ function injectCss() {
   style.id = 'ndv-style';
   style.textContent = `
 [data-view="navigation-drive"] {
-  display: flex;
-  flex-direction: column;
-  height: 100%;
-  overflow: hidden;
-  background: var(--sda-bg-base);
-  color: var(--sda-text-primary);
+  display: flex; flex-direction: column; height: 100%;
+  overflow: hidden; background: var(--sda-bg-base); color: var(--sda-text-primary);
   box-sizing: border-box;
 }
 #ndv-root {
-  display: flex;
-  flex-direction: column;
-  height: 100%;
-  padding: 10px 10px 0 10px;
-  box-sizing: border-box;
-  gap: 7px;
-  overflow: hidden;
+  display: flex; flex-direction: column; height: 100%;
+  padding: 10px 10px 0 10px; box-sizing: border-box; gap: 8px; overflow: hidden;
 }
-/* Arama */
-#ndv-search-row {
-  display: flex;
-  gap: 7px;
-  flex: 0 0 auto;
-}
+
+/* ── Arama satırı ── */
+#ndv-search-row { display: flex; gap: 8px; flex: 0 0 auto; }
 #ndv-input {
-  flex: 1;
-  min-width: 0;
-  padding: 11px 13px;
-  border-radius: 13px;
-  border: 1px solid var(--sda-hairline);
-  background: var(--sda-bg-elevated);
-  color: var(--sda-text-primary);
-  font-size: 14px;
-  outline: none;
+  flex: 1; min-width: 0; padding: 12px 14px; border-radius: 14px;
+  border: 1.5px solid var(--sda-hairline); background: var(--sda-bg-elevated);
+  color: var(--sda-text-primary); font-size: 15px; outline: none;
 }
+#ndv-input:focus { border-color: var(--sda-accent); }
 #ndv-input::placeholder { color: var(--sda-text-faint); }
-.ndv-btn { border: none; border-radius: 12px; padding: 0 16px; font-weight: 700; cursor: pointer; color: #fff; }
+.ndv-btn {
+  border: none; border-radius: 14px; padding: 0 18px;
+  font-weight: 700; font-size: 15px; cursor: pointer; color: #fff;
+}
 .ndv-btn--green { background: #16a34a; }
-/* Öneriler */
+
+/* ── Öneriler ── */
 #ndv-suggestions {
-  display: none;
-  flex: 0 0 auto;
-  background: var(--sda-bg-elevated);
-  border-radius: 10px;
-  overflow: hidden;
-  max-height: 160px;
-  overflow-y: auto;
-  border: 1px solid var(--sda-hairline);
+  display: none; flex: 0 0 auto; background: var(--sda-bg-elevated);
+  border-radius: 12px; overflow: hidden; max-height: 180px; overflow-y: auto;
+  border: 1.5px solid var(--sda-hairline); box-shadow: var(--sda-shadow-elevated);
 }
 #ndv-suggestions button {
-  display: block; width: 100%; text-align: left;
-  padding: 10px 13px; background: none; border: none;
-  border-bottom: 1px solid var(--sda-hairline);
-  color: var(--sda-text-primary); font-size: 13px; cursor: pointer;
+  display: block; width: 100%; text-align: left; padding: 12px 14px;
+  background: none; border: none; border-bottom: 1px solid var(--sda-hairline);
+  color: var(--sda-text-primary); font-size: 14px; cursor: pointer;
 }
-#ndv-suggestions button:hover { background: var(--sda-bg-elevated-hover); }
-/* Harita */
+#ndv-suggestions button:active { background: var(--sda-bg-elevated-hover); }
+
+/* ── Harita ── */
 #ndv-map-wrap {
-  position: relative;
-  flex: 1 1 0;
-  min-height: 0;
-  border-radius: 16px;
-  overflow: hidden;
-  background: var(--sda-bg-surface);
-  border: 1px solid var(--sda-hairline);
+  position: relative; flex: 1 1 0; min-height: 0; border-radius: 18px;
+  overflow: hidden; background: var(--sda-bg-surface); border: 1.5px solid var(--sda-hairline);
 }
-#ndv-map {
-  position: absolute !important;
-  inset: 0 !important;
-  width: 100% !important;
-  height: 100% !important;
-}
-/* Yükleniyor */
+#ndv-map { position: absolute !important; inset: 0 !important; width: 100% !important; height: 100% !important; }
+
+/* ── Yükleniyor ── */
 #ndv-loading {
   position: absolute; inset: 0; z-index: 800;
-  display: flex; flex-direction: column;
-  align-items: center; justify-content: center; gap: 6px;
-  background: rgba(8,12,18,.85); color: #fff;
-  pointer-events: none;
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px;
+  background: rgba(8,12,18,.85); color: #fff; pointer-events: none;
 }
 #ndv-loading.hidden { display: none; }
 .ndv-spinner {
-  width: 26px; height: 26px;
-  border: 3px solid rgba(255,255,255,.18);
-  border-top-color: #22c55e;
-  border-radius: 50%;
-  animation: ndvSpin .8s linear infinite;
+  width: 28px; height: 28px; border: 3px solid rgba(255,255,255,.18);
+  border-top-color: #22c55e; border-radius: 50%; animation: ndvSpin .8s linear infinite;
 }
 @keyframes ndvSpin { to { transform: rotate(360deg); } }
-/* Hız overlay */
+
+/* ── Hız overlay ── */
 #ndv-speed-overlay {
-  position: absolute;
-  top: 10px; left: 50px; /* Leaflet zoom butonlarından sağda */
-  z-index: 900;
-  display: flex; gap: 6px; align-items: center;
-  pointer-events: none;
+  position: absolute; top: 10px; left: 50px; z-index: 900;
+  display: flex; gap: 8px; align-items: center; pointer-events: none;
 }
 #ndv-speed-dial {
-  width: 60px; height: 60px; border-radius: 50%;
-  background: rgba(20,23,30,.88);
-  border: 3px solid rgba(255,255,255,.25);
-  display: flex; flex-direction: column;
-  align-items: center; justify-content: center;
+  width: 64px; height: 64px; border-radius: 50%;
+  background: rgba(14,17,24,.90); border: 3px solid rgba(255,255,255,.25);
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  box-shadow: 0 2px 10px rgba(0,0,0,.5);
 }
-#ndv-speed-val { font-size: 20px; font-weight: 800; line-height: 1; color: #fff; }
+#ndv-speed-val { font-size: 22px; font-weight: 800; line-height: 1; color: #fff; }
+#ndv-speed-val.over { color: #FF5A5F; }
 #ndv-speed-dial small { font-size: 8px; color: rgba(255,255,255,.6); }
 #ndv-limit-badge {
-  width: 46px; height: 46px; border-radius: 50%;
-  background: #fff;
-  border: 4px solid #E02020;
+  width: 48px; height: 48px; border-radius: 50%;
+  background: #fff; border: 4px solid #E02020;
   display: flex; align-items: center; justify-content: center;
+  box-shadow: 0 2px 8px rgba(0,0,0,.4);
 }
-#ndv-limit-val { color: #1a1a1a; font-weight: 800; font-size: 14px; }
-/* Radar badge */
+#ndv-limit-val { color: #1a1a1a; font-weight: 800; font-size: 15px; }
+
+/* ── Radar ── */
 #ndv-camera-badge {
-  position: absolute; bottom: 52px; right: 10px; z-index: 900;
+  position: absolute; bottom: 54px; right: 10px; z-index: 900;
   background: rgba(220,38,38,.88); color: #fff;
-  padding: 5px 10px; border-radius: 10px; font-size: 11px; font-weight: 700;
+  padding: 6px 11px; border-radius: 10px; font-size: 12px; font-weight: 700;
   pointer-events: none;
 }
-/* Takip butonu */
+
+/* ── Takip butonu ── */
 #ndv-follow-btn {
   position: absolute; bottom: 10px; right: 10px; z-index: 900;
-  width: 40px; height: 40px; border-radius: 50%;
-  border: none; background: rgba(20,23,30,.88);
-  color: #fff; font-size: 18px; cursor: pointer;
+  width: 44px; height: 44px; border-radius: 50%; border: none;
+  background: rgba(14,17,24,.90); color: #fff; font-size: 20px; cursor: pointer;
   box-shadow: var(--sda-shadow-elevated);
 }
-#ndv-follow-btn.active { outline: 2px solid #22c55e; }
-/* Stats */
+#ndv-follow-btn.active { outline: 2.5px solid #22c55e; }
+
+/* ── İstatistik barı ── */
 #ndv-stats {
-  display: grid;
-  grid-template-columns: repeat(5, 1fr);
-  gap: 5px;
-  flex: 0 0 auto;
+  display: grid; grid-template-columns: repeat(5, 1fr);
+  gap: 6px; flex: 0 0 auto;
 }
 .ndv-stat {
-  background: var(--sda-bg-elevated);
-  border: 1px solid var(--sda-hairline);
-  border-radius: 10px;
-  padding: 7px 4px;
-  text-align: center;
+  background: var(--sda-bg-elevated); border: 1.5px solid var(--sda-hairline);
+  border-radius: 12px; padding: 9px 4px; text-align: center;
 }
-.ndv-stat span { display: block; font-size: 7px; color: var(--sda-text-muted); }
-.ndv-stat strong { display: block; font-size: 14px; font-weight: 800; margin: 2px 0; color: var(--sda-text-primary); }
-.ndv-stat small { display: block; font-size: 7px; color: var(--sda-text-muted); }
-/* Kısa yollar */
-#ndv-shortcuts {
-  display: flex; gap: 6px; flex: 0 0 auto;
-}
+.ndv-stat span  { display: block; font-size: 8px; font-weight: 600; color: var(--sda-text-muted); margin-bottom: 2px; }
+.ndv-stat strong{ display: block; font-size: 16px; font-weight: 800; color: var(--sda-text-primary); }
+.ndv-stat small { display: block; font-size: 8px; color: var(--sda-text-muted); margin-top: 1px; }
+
+/* ── Kısa yollar ── */
+#ndv-shortcuts { display: flex; gap: 8px; flex: 0 0 auto; }
 #ndv-shortcuts button {
-  flex: 1; border: 1px solid var(--sda-hairline); border-radius: 10px;
-  padding: 8px 4px; font-size: 10px; font-weight: 600;
+  flex: 1; border: 1.5px solid var(--sda-hairline); border-radius: 12px;
+  padding: 11px 4px; font-size: 12px; font-weight: 700;
   background: var(--sda-bg-elevated); color: var(--sda-text-primary); cursor: pointer;
 }
-/* Rota özeti */
+#ndv-shortcuts button:active { background: var(--sda-bg-elevated-hover); }
+
+/* ── Rota özeti ── */
 #ndv-summary {
-  display: flex; align-items: center; gap: 8px; flex: 0 0 auto;
-  background: var(--sda-bg-elevated); border: 1px solid var(--sda-hairline);
-  border-radius: 10px; padding: 8px 12px; font-size: 12px;
+  display: none; align-items: center; gap: 8px; flex: 0 0 auto;
+  background: var(--sda-bg-elevated); border: 1.5px solid var(--sda-hairline);
+  border-radius: 14px; padding: 10px 14px;
 }
-#ndv-sum-label { flex: 1; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-#ndv-sum-dist, #ndv-sum-dur { opacity: .7; white-space: nowrap; }
-#ndv-cancel-btn { border: none; background: rgba(255,80,80,.2); color: #ff5a5f; border-radius: 8px; padding: 4px 8px; font-size: 11px; cursor: pointer; }
-/* Mesaj */
-#ndv-msg { flex: 0 0 auto; font-size: 10px; color: var(--sda-text-muted); text-align: center; margin: 2px 0 6px 0; }
+#ndv-sum-label { flex: 1; font-weight: 700; font-size: 14px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+#ndv-sum-dist, #ndv-sum-dur { font-size: 13px; color: var(--sda-text-muted); white-space: nowrap; }
 
-/* Leaflet attribution küçük ekranda taşmasın */
+/* ── Başla / İptal butonları ── */
+#ndv-action-row { display: none; gap: 8px; flex: 0 0 auto; }
+#ndv-start-btn {
+  flex: 1; border: none; border-radius: 14px; padding: 14px;
+  background: #16a34a; color: #fff; font-size: 15px; font-weight: 800;
+  cursor: pointer; letter-spacing: .01em;
+}
+#ndv-cancel-btn {
+  border: none; border-radius: 14px; padding: 14px 18px;
+  background: var(--sda-danger-soft, rgba(255,90,95,.14));
+  color: var(--sda-danger, #FF5A5F); font-size: 14px; font-weight: 700; cursor: pointer;
+}
+
+/* ── Durum mesajı ── */
+#ndv-msg { flex: 0 0 auto; font-size: 11px; color: var(--sda-text-muted); text-align: center; margin: 0 0 6px; }
+
+/* Leaflet attribution */
 #ndv-map .leaflet-control-attribution { font-size: 9px; }
-
-/* Aşılmış limit: kırmızı hız */
-#ndv-speed-val.over { color: #FF5A5F; }
 `;
   document.head.appendChild(style);
 }
@@ -560,7 +539,7 @@ async function routeTo(dest) {
   S.follow = false;
   el('ndv-follow-btn')?.classList.remove('active');
 
-  // Rota özeti
+  // Rota özeti + buton satırını göster, kısa yolları gizle
   const distTxt = best.distanceKm >= 1 ? `${best.distanceKm.toFixed(1)} km` : `${Math.round(best.distanceKm * 1000)} m`;
   const durTxt = `~${Math.round(best.durationMinutes)} dk`;
   setTxt('ndv-sum-label', dest.label);
@@ -568,6 +547,10 @@ async function routeTo(dest) {
   setTxt('ndv-sum-dur', durTxt);
   const sum = el('ndv-summary');
   if (sum) sum.style.display = 'flex';
+  const actionRow = el('ndv-action-row');
+  if (actionRow) actionRow.style.display = 'flex';
+  const shortcuts = el('ndv-shortcuts');
+  if (shortcuts) shortcuts.style.display = 'none';
 
   updateStats({ dist: best.distanceKm, etaMin: best.durationMinutes });
   setMsg(`${dest.label} · ${distTxt} · ${durTxt}`);
@@ -579,6 +562,13 @@ function cancelRoute() {
   S.dest = null;
   const sum = el('ndv-summary');
   if (sum) sum.style.display = 'none';
+  const actionRow = el('ndv-action-row');
+  if (actionRow) actionRow.style.display = 'none';
+  const shortcuts = el('ndv-shortcuts');
+  if (shortcuts) shortcuts.style.display = 'flex';
+  // Arama alanını temizle
+  const inp = el('ndv-input');
+  if (inp) inp.value = '';
   clearStats();
   setMsg('Rota iptal edildi.');
 }
@@ -716,6 +706,26 @@ export async function initNavigationDriveView() {
     if (S.map && S.lastPos) {
       S.map.setView([S.lastPos.latitude, S.lastPos.longitude], 16, { animate: true });
     }
+  });
+
+  // Başla butonu — takibi aktive et, haritayı araç konumuna ortala
+  el('ndv-start-btn')?.addEventListener('click', () => {
+    S.follow = true;
+    el('ndv-follow-btn')?.classList.add('active');
+    if (S.map && S.lastPos) {
+      S.map.setView([S.lastPos.latitude, S.lastPos.longitude], 16, { animate: true });
+    }
+    setMsg('Navigasyon başladı. İyi yolculuklar!');
+  });
+
+  // Başla butonu — takibi aktive et, haritayı araç konumuna ortala
+  el('ndv-start-btn')?.addEventListener('click', () => {
+    S.follow = true;
+    el('ndv-follow-btn')?.classList.add('active');
+    if (S.map && S.lastPos) {
+      S.map.setView([S.lastPos.latitude, S.lastPos.longitude], 16, { animate: true });
+    }
+    setMsg('Navigasyon başladı. İyi yolculuklar!');
   });
 
   // İptal butonu
