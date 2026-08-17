@@ -35,37 +35,44 @@ function initMap(lat,lon){if(S.map)return;const c=el('ndv-map');if(!c)return;S.m
 }
 
 function attachRotateGesture(mapEl){
-  // İki parmak açısını hesapla
-  function angle(t){
-    const [a,b]=[t[0],t[1]];
-    return Math.atan2(b.clientY-a.clientY,b.clientX-a.clientX)*180/Math.PI;
+  // İki parmak arasındaki açıyı radyan cinsinden döndür
+  function touchAngleRad(t){
+    return Math.atan2(t[1].clientY-t[0].clientY, t[1].clientX-t[0].clientX);
   }
-  let startAngle=null,startMapAngle=0,rotating=false;
+  // İki açı arasındaki en kısa farkı [-180,+180] aralığında döndür
+  function angleDiffDeg(a,b){
+    let d=((b-a)*180/Math.PI+540)%360-180;
+    return d;
+  }
+
+  let prevAngleRad=null, rotating=false;
 
   mapEl.addEventListener('touchstart',e=>{
     if(e.touches.length===2){
-      startAngle=angle(e.touches);
-      startMapAngle=S.manualBearing??0;
+      prevAngleRad=touchAngleRad(e.touches);
       rotating=true;
       e.preventDefault();
     } else {
-      rotating=false;startAngle=null;
+      rotating=false; prevAngleRad=null;
     }
   },{passive:false});
 
   mapEl.addEventListener('touchmove',e=>{
     if(!rotating||e.touches.length!==2)return;
     e.preventDefault();
-    const delta=angle(e.touches)-startAngle;
-    const bearing=(startMapAngle+delta+360)%360;
-    S.manualBearing=bearing;
+    const curAngleRad=touchAngleRad(e.touches);
+    // Adım adım delta — 180° atlama sorunu olmaz
+    const stepDeg=angleDiffDeg(prevAngleRad, curAngleRad);
+    prevAngleRad=curAngleRad;
+    // Hassasiyet: 1:1 oranı doğal, azaltmaya gerek yok
+    S.manualBearing=((S.manualBearing??0)+stepDeg+360)%360;
     S.manualRotate=true;
-    applyMapRotation(-bearing);
-    set('ndv-heading-badge',`${Math.round(bearing)}°`);
+    applyMapRotation(-S.manualBearing);
+    set('ndv-heading-badge',`${Math.round(S.manualBearing)}°`);
   },{passive:false});
 
   mapEl.addEventListener('touchend',e=>{
-    if(e.touches.length<2){rotating=false;startAngle=null;}
+    if(e.touches.length<2){rotating=false; prevAngleRad=null;}
   });
 }
 
